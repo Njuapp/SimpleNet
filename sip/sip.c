@@ -69,7 +69,7 @@ void* routeupdate_daemon(void* arg) {
 	pkt.header.dest_nodeID = BROADCAST_NODEID;
 	pkt.header.src_nodeID = topology_getMyNodeID();
 	//TODO:construct routing packet
-
+	memcpy(&pkt.data, dv, sizeof(dv_t));
 	while (son_conn != -1)
 	{
 		printf("=SEND A BROADCAST OUT=\n");
@@ -87,8 +87,18 @@ void* pkthandler(void* arg) {
 	sip_pkt_t* pkt = (sip_pkt_t*)malloc(sizeof(sip_pkt_t));
 	while(son_recvpkt(pkt,son_conn)>0) {
 		if(pkt->header.type == ROUTE_UPDATE){
-			//TODO:update the routing table
-			printf("Routing: received ROUTE_UPDATE from neighbor %d\n",pkt->header.src_nodeID);
+			dv_t *recv_dv = (dv_t *)pkt->data;
+			int inter = recv_dv->nodeID;
+			for (int i = 0; i < topology_getNodeNum(); i++){
+				int dest = recv_dv->dvEntry[i].nodeID;
+				int i2dest = recv_dv->dvEntry[i].cost;
+				if(i2dest + dv->dvEntry[inter].cost < dv->dvEntry[dest].cost){
+					dv->dvEntry[dest].cost = dv->dvEntry[inter].cost + i2dest;
+					//TODO:update the routing table
+					dvtable_print(dv);
+				}
+			}
+			printf("Routing: received ROUTE_UPDATE from neighbor %d\n", pkt->header.src_nodeID);
 		}
 		else if(pkt->header.type == SIP){
 			if(pkt->header.dest_nodeID == topology_getMyNodeID()){
@@ -143,7 +153,7 @@ void waitSTCP() {
 		socklen_t socklen = sizeof(stcpaddr);
 		int stcp_conn = accept(listenfd, (struct sockaddr *)&stcpaddr, &socklen);
 		int destID;
-		seg_t seg;
+		seg_t seg;	
 		while (getsegToSend(stcp_conn, &destID, &seg) > 0){
 			sip_pkt_t *pkt = (sip_pkt_t *)malloc(sizeof(sip_pkt_t));
 			pkt->header.src_nodeID = topology_getMyNodeID();
@@ -164,13 +174,13 @@ int main(int argc, char *argv[]) {
 	//初始化neighbor cost table
 	nct = nbrcosttable_create();
 	nbrcosttable_print(nct);
-	return 0;
+
 	//初始化distance vector table
 	dv = dvtable_create();
 	dv_mutex = (pthread_mutex_t*)malloc(sizeof(pthread_mutex_t));
 	pthread_mutex_init(dv_mutex,NULL);
 	dvtable_print(dv);
-
+	
 	//初始化routing table
 	routingtable = routingtable_create();
 	routingtable_mutex = (pthread_mutex_t*)malloc(sizeof(pthread_mutex_t));

@@ -8,7 +8,7 @@
 #define DVTABLE_H
 
 #include "../common/pkt.h"
-
+#include "../common/constants.h"
 //dv_entry_t结构定义
 typedef struct distancevectorentry {
 	int nodeID;		    //目标节点ID	
@@ -18,7 +18,7 @@ typedef struct distancevectorentry {
 //一个距离矢量表包含(n+1)个dv_t条目, 其中n是这个节点的邻居数, 剩下的一个是这个节点自身. 
 typedef struct distancevector {
 	int nodeID;		        //源节点ID
-	dv_entry_t* dvEntry;	//一个包含N个dv_entry_t的数组, 其中每个成员包含目标节点ID和从该源节点到该目标节点的代价. N是重叠网络中总的节点数.
+	dv_entry_t dvEntry[MAX_NODE_NUM]; //一个包含N个dv_entry_t的数组, 其中每个成员包含目标节点ID和从该源节点到该目标节点的代价. N是重叠网络中总的节点数.
 } dv_t;
 
 //这个函数动态创建距离矢量表.

@@ -87,21 +87,48 @@ int topology_getNbrNum()
 //返回重叠网络中的总节点数.
 int topology_getNodeNum()
 { 
-  return 0;
+  return 4;
 }
 
 //这个函数解析保存在文件topology.dat中的拓扑信息.
 //返回一个动态分配的数组, 它包含重叠网络中所有节点的ID. 
 int* topology_getNodeArray()
 {
-  return 0;
+  int *nodeArr = (int *)malloc(sizeof(int) * 4);
+  for (int i = 0; i < 4; i ++)
+    nodeArr[i] = 185 + i;
+  return nodeArr;
 }
 
 //这个函数解析保存在文件topology.dat中的拓扑信息.
 //返回一个动态分配的数组, 它包含所有邻居的节点ID.  
 int* topology_getNbrArray()
 {
-  return 0;
+  int nbrs = topology_getNbrNum();
+  int *nbrArr = (int *)malloc(sizeof(int) * nbrs);
+  FILE *fp = fopen("../topology/topology.dat", "r");
+  char host1[256], host2[256];
+  int cost;
+  int hostid = topology_getMyNodeID();
+  int cnt = 0;
+  while (!feof(fp))
+  {
+    fscanf(fp, "%s", host1);
+    if(feof(fp))
+      break;
+    fscanf(fp, "%s", host2);
+    fscanf(fp, "%d", &cost);
+    int node1 = topology_getNodeIDfromname(host1);
+    int node2 = topology_getNodeIDfromname(host2);
+    if(node1 == hostid){
+      nbrArr[cnt++] = node2;
+    }
+    else if(node2 == hostid){
+      nbrArr[cnt++] = node1;
+    }
+  }
+  assert(cnt == nbrs);
+  return nbrArr;
 }
 
 //这个函数解析保存在文件topology.dat中的拓扑信息.
@@ -109,5 +136,24 @@ int* topology_getNbrArray()
 //如果指定两个节点之间没有直接链路, 返回INFINITE_COST.
 unsigned int topology_getCost(int fromNodeID, int toNodeID)
 {
-  return 0;
+  FILE *fp = fopen("../topology/topology.dat", "r");
+  char host1[256], host2[256];
+  int cost;
+  while (!feof(fp))
+  {
+    fscanf(fp, "%s", host1);
+    if(feof(fp))
+      break;
+    fscanf(fp, "%s", host2);
+    fscanf(fp, "%d", &cost);
+    int node1 = topology_getNodeIDfromname(host1);
+    int node2 = topology_getNodeIDfromname(host2);
+    if(node1 == fromNodeID && node2 == toNodeID){
+      return cost;
+    }
+    else if(node1 == toNodeID && node2 == toNodeID){
+      return cost;
+    }
+  }
+  return INFINITE_COST;
 }

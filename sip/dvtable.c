@@ -15,16 +15,42 @@
 //距离矢量表也在这个函数中初始化.从这个节点到其邻居的链路代价使用提取自topology.dat文件中的直接链路代价初始化.
 //其他链路代价被初始化为INFINITE_COST.
 //该函数返回动态创建的距离矢量表.
-dv_t* dvtable_create()
+int nbrs;
+dv_t *dvtable_create()
 {
-  return 0;
+  nbrs = topology_getNbrNum();
+  dv_t *dv = (dv_t *)malloc(sizeof(dv_t) * (nbrs+1));
+  int *nbrArr = topology_getNbrArray();
+  int *nodeArr = topology_getNodeArray();
+  for (int i = 0; i < nbrs; i++)
+  {
+    dv[i].nodeID = nbrArr[i];
+    for (int j = 0; j < topology_getNodeNum(); j ++){
+        dv[i].dvEntry[j].nodeID = nodeArr[j];
+        if(dv[i].nodeID == nodeArr[j])
+          dv[i].dvEntry[j].cost = 0;
+        else
+          dv[i].dvEntry[j].cost = topology_getCost(dv[i].nodeID, nodeArr[j]);
+    }
+  }
+  dv[nbrs].nodeID = topology_getMyNodeID();
+  for (int j = 0; j < topology_getNodeNum(); j ++){
+    dv[nbrs].dvEntry[j].nodeID = nodeArr[j];
+    if(dv[nbrs].nodeID == nodeArr[j])
+      dv[nbrs].dvEntry[j].cost = 0;
+    else
+      dv[nbrs].dvEntry[j].cost = topology_getCost(dv[nbrs].nodeID, nodeArr[j]);
+  }
+  free(nbrArr);
+  free(nodeArr);
+  return dv;
 }
 
 //这个函数删除距离矢量表.
 //它释放所有为距离矢量表动态分配的内存.
 void dvtable_destroy(dv_t* dvtable)
 {
-  return;
+  free(dvtable);
 }
 
 //这个函数设置距离矢量表中2个节点之间的链路代价.
@@ -44,5 +70,19 @@ unsigned int dvtable_getcost(dv_t* dvtable, int fromNodeID, int toNodeID)
 //这个函数打印距离矢量表的内容.
 void dvtable_print(dv_t* dvtable)
 {
-  return;
+  printf("--------------------------\n");
+  printf("| DV |");
+  for (int j = 0; j < topology_getNodeNum(); j++)
+    printf("%4d|", dvtable[0].dvEntry[j].nodeID);
+  printf("\n");
+  for (int i = 0; i <= nbrs; i++)
+  {
+    printf("|%4d|", dvtable[i].nodeID);
+    for (int j = 0; j < topology_getNodeNum(); j++)
+    {
+      printf("%4d|", dvtable[i].dvEntry[j].cost);
+    }
+    printf("\n");
+  }
+  printf("--------------------------\n");
 }
