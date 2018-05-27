@@ -1,5 +1,6 @@
-*server
-*client
+server/app_simple_server
+server/app_stress_server
 *.o
 .DS_Store
-
+client/app_simple_client
+client/app_stress_client
