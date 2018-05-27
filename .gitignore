@@ -5,3 +5,4 @@ server/app_stress_server
 client/app_simple_client
 client/app_stress_client
 .vscode/
+*.sh

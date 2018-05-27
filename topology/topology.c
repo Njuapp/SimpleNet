@@ -15,7 +15,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-
+#define max(x,y) x>y?x:y 
+#define min(x,y) x<y?x:y
 //这个函数返回指定主机的节点ID.
 //节点ID是节点IP地址最后8位表示的整数.
 //例如, 一个节点的IP地址为202.119.32.12, 它的节点ID就是12.
@@ -148,10 +149,10 @@ unsigned int topology_getCost(int fromNodeID, int toNodeID)
     fscanf(fp, "%d", &cost);
     int node1 = topology_getNodeIDfromname(host1);
     int node2 = topology_getNodeIDfromname(host2);
-    if(node1 == fromNodeID && node2 == toNodeID){
-      return cost;
-    }
-    else if(node1 == toNodeID && node2 == toNodeID){
+    int minv = min(fromNodeID, toNodeID);
+    int maxv = max(fromNodeID, toNodeID);
+    if (node1 == minv && node2 == maxv)
+    {
       return cost;
     }
   }

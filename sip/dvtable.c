@@ -27,10 +27,7 @@ dv_t *dvtable_create()
     dv[i].nodeID = nbrArr[i];
     for (int j = 0; j < topology_getNodeNum(); j ++){
         dv[i].dvEntry[j].nodeID = nodeArr[j];
-        if(dv[i].nodeID == nodeArr[j])
-          dv[i].dvEntry[j].cost = 0;
-        else
-          dv[i].dvEntry[j].cost = topology_getCost(dv[i].nodeID, nodeArr[j]);
+        dv[i].dvEntry[j].cost = INFINITE_COST;
     }
   }
   dv[nbrs].nodeID = topology_getMyNodeID();

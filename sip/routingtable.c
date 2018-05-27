@@ -32,6 +32,7 @@ routingtable_t* routingtable_create()
     rouentry->next = rt->hash[idx];
     rouentry->destNodeID = nbr;
     rouentry->nextNodeID = nbr;
+    rt->hash[idx] = rouentry;
   }
   return rt;
 }
@@ -40,6 +41,19 @@ routingtable_t* routingtable_create()
 //所有为路由表动态分配的数据结构将被释放.
 void routingtable_destroy(routingtable_t* routingtable)
 {
+  int nbrs = topology_getNbrNum();
+  int *nbrArr = topology_getNbrArray();
+  for (int i = 0; i < nbrs; i++)
+  {
+    int nbr = nbrArr[i];
+    routingtable_entry_t *entry = routingtable->hash[makehash(nbr)];
+    while(entry){
+      routingtable_entry_t *p = entry;
+      entry = entry->next;
+      free(p);
+    }
+  }
+  free(routingtable);
   return;
 }
 
@@ -51,7 +65,21 @@ void routingtable_destroy(routingtable_t* routingtable)
 //然后将路由条目附加到该槽的链表中.
 void routingtable_setnextnode(routingtable_t* routingtable, int destNodeID, int nextNodeID)
 {
-  return;
+  int idx = makehash(destNodeID);
+  routingtable_entry_t *entry = routingtable->hash[idx];
+  while(entry && entry->destNodeID!= destNodeID){
+    entry = entry->next;
+  }
+  if(!entry){
+    routingtable_entry_t *entry = (routingtable_entry_t *)malloc(sizeof(routingtable_entry_t));
+    entry->destNodeID = destNodeID;
+    entry->nextNodeID = nextNodeID;
+    entry->next = routingtable->hash[idx];
+    routingtable->hash[idx] = entry;
+  }
+  else{
+    entry->nextNodeID = nextNodeID;
+  }
 }
 
 //这个函数在路由表中查找指定的目标节点ID.

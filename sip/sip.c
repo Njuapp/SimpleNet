@@ -65,11 +65,12 @@ int connectToSON() {
 void* routeupdate_daemon(void* arg) {
 	sip_pkt_t pkt;
 	pkt.header.type = ROUTE_UPDATE;
-	pkt.header.length = sizeof(seg_t);
+	pkt.header.length = sizeof(dv_t);
 	pkt.header.dest_nodeID = BROADCAST_NODEID;
 	pkt.header.src_nodeID = topology_getMyNodeID();
 	//TODO:construct routing packet
-	memcpy(&pkt.data, dv, sizeof(dv_t));
+	int nbrs = topology_getNbrNum();
+	memcpy(&pkt.data, &dv[nbrs], sizeof(dv_t));
 	while (son_conn != -1)
 	{
 		printf("=SEND A BROADCAST OUT=\n");
@@ -89,16 +90,52 @@ void* pkthandler(void* arg) {
 		if(pkt->header.type == ROUTE_UPDATE){
 			dv_t *recv_dv = (dv_t *)pkt->data;
 			int inter = recv_dv->nodeID;
-			for (int i = 0; i < topology_getNodeNum(); i++){
-				int dest = recv_dv->dvEntry[i].nodeID;
-				int i2dest = recv_dv->dvEntry[i].cost;
-				if(i2dest + dv->dvEntry[inter].cost < dv->dvEntry[dest].cost){
-					dv->dvEntry[dest].cost = dv->dvEntry[inter].cost + i2dest;
-					//TODO:update the routing table
-					dvtable_print(dv);
+			int nbrs = topology_getNbrNum();
+			int k = -1;
+			for (int i = 0; i < topology_getNbrNum(); i++)
+			{
+				if(dv[i].nodeID == inter){
+					k = i;
+					break;
 				}
 			}
-			printf("Routing: received ROUTE_UPDATE from neighbor %d\n", pkt->header.src_nodeID);
+			/*
+			printf("+++ROUTING+++\n");
+			for (int i = 0; i < topology_getNodeNum(); i++)
+			{
+				printf("%4d|", recv_dv->dvEntry[i].nodeID);
+			}
+			printf("\n");
+			for (int i = 0; i < topology_getNodeNum(); i++)
+			{
+				printf("%4d|", recv_dv->dvEntry[i].cost);
+			}
+			printf("\n");
+			*/
+
+			if (k == -1)
+			{
+				fprintf(stderr, "Invalid routing packet!\n");
+				break;
+				}
+			for (int i = 0; i < topology_getNodeNum(); i++)
+			{
+				dv[k].dvEntry[k].cost = recv_dv->dvEntry[k].cost;
+			}
+			for (int i = 0; i < topology_getNodeNum(); i++)
+			{
+				int dest = recv_dv->dvEntry[i].nodeID;
+				int icost = recv_dv->dvEntry[i].cost;
+				if (icost + nbrcosttable_getcost(nct, inter) < dv[nbrs].dvEntry[i].cost)
+				{
+					dv[nbrs].dvEntry[i].cost = nbrcosttable_getcost(nct, inter) + icost;
+					//TODO:update the routing table
+					routingtable_setnextnode(routingtable, dest, inter);
+					dvtable_print(dv);
+					routingtable_print(routingtable);
+				}
+			}
+			
 		}
 		else if(pkt->header.type == SIP){
 			if(pkt->header.dest_nodeID == topology_getMyNodeID()){
@@ -186,7 +223,7 @@ int main(int argc, char *argv[]) {
 	routingtable_mutex = (pthread_mutex_t*)malloc(sizeof(pthread_mutex_t));
 	pthread_mutex_init(routingtable_mutex,NULL);
 	routingtable_print(routingtable);
-	return 0;
+
 	son_conn = -1;
 	stcp_conn = -1;
 
@@ -211,6 +248,7 @@ int main(int argc, char *argv[]) {
 	printf("SIP layer is started...\n");
 	printf("waiting for routes to be established\n");
 	sleep(SIP_WAITTIME);
+	dvtable_print(dv);
 	routingtable_print(routingtable);
 
 	//等待来自STCP进程的连接
