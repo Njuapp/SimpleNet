@@ -16,7 +16,7 @@
 //最大段长度
 //MAX_SEG_LEN = 1500 - sizeof(seg header) - sizeof(ip header)
 //#define MAX_SEG_LEN  1464
-#define MAX_SEG_LEN 200
+#define MAX_SEG_LEN 1464
 //数据包丢失率为10%
 #define PKT_LOSS_RATE 0.1
 //SYN_TIMEOUT值, 单位为纳秒

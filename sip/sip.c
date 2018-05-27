@@ -69,11 +69,12 @@ void* routeupdate_daemon(void* arg) {
 	pkt.header.length = 0;
 	pkt.header.dest_nodeID = BROADCAST_NODEID;
 	pkt.header.src_nodeID = topology_getMyNodeID();
-
+	//TODO:construct routing packet
 	while (son_conn != -1)
 	{
 		printf("=SEND A BROADCAST OUT=\n");
-		son_sendpkt(BROADCAST_NODEID, &pkt, son_conn);
+		if(son_conn != -1)
+			son_sendpkt(BROADCAST_NODEID, &pkt, son_conn);
 		sleep(ROUTEUPDATE_INTERVAL);
 	}
 	pthread_exit(NULL);
@@ -83,10 +84,31 @@ void* routeupdate_daemon(void* arg) {
 //如果报文是SIP报文,并且目的节点就是本节点,就转发报文给STCP进程. 如果目的节点不是本节点,
 //就根据路由表转发报文给下一跳.如果报文是路由更新报文,就更新距离矢量表和路由表.
 void* pkthandler(void* arg) {
-	sip_pkt_t pkt;
-	//TODO:judge pkt.header.type and pkt.header.dest
-	while(son_recvpkt(&pkt,son_conn)>0) {
-		printf("Routing: received a packet from neighbor %d\n",pkt.header.src_nodeID);
+	sip_pkt_t* pkt = (sip_pkt_t*)malloc(sizeof(sip_pkt_t));
+	while(son_recvpkt(pkt,son_conn)>0) {
+		if(pkt->header.type == ROUTE_UPDATE){
+			//TODO:update the routing table
+			log("Routing: received ROUTE_UPDATE from neighbor %d",pkt->header.src_nodeID);
+		}
+		else if(pkt->header.type == SIP){
+			if(pkt->header.dest_nodeID == topology_getMyNodeID()){
+				seg_t *recvseg = (seg_t *)(&pkt->data);
+				if(stcp_conn!=-1){
+					forwardsegToSTCP(stcp_conn, pkt->header.src_nodeID, recvseg);
+					log("Forward a data from SRC(%d) to STCP", pkt->header.src_nodeID);
+				}
+			}
+			else{
+				int nextID = routingtable_getnextnode(routingtable, pkt->header.dest_nodeID);
+				if(son_conn!=-1){
+					son_sendpkt(nextID, pkt, son_conn);
+					log("Routing: [%d->%d->%d]", pkt->header.src_nodeID, topology_getMyNodeID(), nextID);
+				}
+			}
+		}
+		else{
+			panic("Recevied something wrong with type of packet\n");
+		}
 	}
 	close(son_conn);
 	son_conn = -1;
@@ -107,7 +129,32 @@ void sip_stop() {
 //接收的段被封装进数据报(一个段在一个数据报中), 然后使用son_sendpkt发送该报文到下一跳. 下一跳节点ID提取自路由表.
 //当本地STCP进程断开连接时, 这个函数等待下一个STCP进程的连接.
 void waitSTCP() {
-	//TODO:
+	struct sockaddr_in listenaddr;
+	listenaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+	listenaddr.sin_family = AF_INET;
+	listenaddr.sin_port = SIP_PORT;
+	int listenfd = socket(AF_INET, SOCK_STREAM, 0);
+	bind(listenfd, (struct sockaddr *)&listenaddr, sizeof(listenaddr));
+	
+	while (1)
+	{
+		listen(listenfd, 1);
+		struct sockaddr_in stcpaddr;
+		socklen_t socklen = sizeof(stcpaddr);
+		int stcp_conn = accept(listenfd, (struct sockaddr *)&stcpaddr, &socklen);
+		int destID;
+		seg_t seg;
+		while (getsegToSend(stcp_conn, &destID, &seg) > 0){
+			sip_pkt_t *pkt = (sip_pkt_t *)malloc(sizeof(sip_pkt_t));
+			pkt->header.src_nodeID = topology_getMyNodeID();
+			pkt->header.dest_nodeID = destID;
+			pkt->header.type = SIP;
+			pkt->header.length = sizeof(seg_t);
+			memcpy(&pkt->data, &seg, sizeof(seg_t));
+			int nextID = routingtable_getnextnode(routingtable, destID);
+			son_sendpkt(nextID, pkt, son_conn);
+		}
+	}
   return;
 }
 

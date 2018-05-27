@@ -107,15 +107,16 @@ int connectNbrs() {
 void* listen_to_neighbor(void* arg) {
 	int *idxp = (int *)arg;
 	int idx = *idxp;
-	sip_pkt_t pkt;
+	sip_pkt_t* pkt = (sip_pkt_t*)malloc(sizeof(sip_pkt_t));
 	int n = 0;
-	while ((n = recvpkt(&pkt, nt[idx].conn)) > 0)
+	while ((n = recvpkt(pkt, nt[idx].conn)) > 0)
 	{
-		log("RECV A PACKET FROM %d <--\n", pkt.header.src_nodeID);
+		log("RECV A PACKET FROM %d <--\n", pkt->header.src_nodeID);
 		if(sip_conn != -1)
-			forwardpktToSIP(&pkt, sip_conn);
+			forwardpktToSIP(pkt, sip_conn);
 	}
 	log("Unable to listen to %d, return code is %d\n", nt[idx].nodeID, n);
+	free(pkt);
 	if (n <= 0)
 	{
 		nt[idx].conn = -1;
@@ -137,26 +138,39 @@ void waitSIP() {
 	bind(listenfd, (struct sockaddr *)&listenaddr, sizeof(listenaddr));
 	listen(listenfd, 1);
 	while(1){
-	socklen_t socklen = sizeof(sipaddr);
-	log("==waiting for connection from sip==\n");
-	sip_conn = accept(listenfd, (struct sockaddr *)&sipaddr, &socklen);
-	log("==ESTABLISHED connection from sip==\n");
-	sip_pkt_t pkt;
-	int nextnode;
-	while (getpktToSend(&pkt, &nextnode, sip_conn) > 0){
-		if(nextnode == BROADCAST_NODEID){
-			log("SEND A BROADCAST PACKET TO-->\n");
-			for (int i = 0; i < topology_getNbrNum(); i++){
-				if(nt[i].conn != -1){
-					log("%d ", nt[i].nodeID);
-					sendpkt(&pkt, nt[i].conn);
+		socklen_t socklen = sizeof(sipaddr);
+		log("==waiting for connection from sip==\n");
+		sip_conn = accept(listenfd, (struct sockaddr *)&sipaddr, &socklen);
+		log("==ESTABLISHED connection from sip==\n");
+		sip_pkt_t* pkt = (sip_pkt_t*)malloc(sizeof(sip_pkt_t));
+		int nextnode;
+		while (getpktToSend(pkt, &nextnode, sip_conn) > 0){
+			if(nextnode == BROADCAST_NODEID){
+				log("SEND A BROADCAST PACKET TO-->");
+				for (int i = 0; i < topology_getNbrNum(); i++){
+					if(nt[i].conn != -1){
+						printf("%d ", nt[i].nodeID);
+						sendpkt(pkt, nt[i].conn);
+					}
+				}
+				printf("\n");
+			}
+			else{
+				for (int i = 0; i < topology_getNbrNum(); i++)
+				{
+					if(nt[i].nodeID == nextnode){
+						log("SEND A PACKET TO --> %d\n", nextnode);
+						if(nt[i].conn != -1){
+							sendpkt(pkt, nt[i].conn);
+						}
+						break;
+					}
 				}
 			}
-			printf("\n");
 		}
-	}
-	sip_conn = -1;
-	log("Oops! DISCONNECTED FROM SIP !\n");
+		free(pkt);
+		sip_conn = -1;
+		log("Oops! DISCONNECTED FROM SIP !\n");
 	}
 	close(listenfd);
 }
