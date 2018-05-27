@@ -219,7 +219,6 @@ void waitSTCP() {
 int main(int argc, char *argv[]) {
 	printf("SIP layer is starting, pls wait...\n");
 	
-	return 0;
 	//初始化neighbor cost table
 	nct = nbrcosttable_create();
 	nbrcosttable_print(nct);

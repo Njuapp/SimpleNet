@@ -70,6 +70,7 @@ enum recvstate
 };
 int sip_recvseg(int sip_conn, int* src_nodeID, seg_t* segPtr)
 {
+	
 	char tmp;
 	enum recvstate state = SEGSTART1;
 	int cnt = 0;
@@ -77,6 +78,7 @@ int sip_recvseg(int sip_conn, int* src_nodeID, seg_t* segPtr)
 	int n = 0;
 	while ((n= recv(sip_conn, &tmp, 1, 0)) > 0)
 	{
+		print_seg(segPtr, RECV);
 		switch(state){
 			case SEGSTART1:
 				if(tmp == '!')

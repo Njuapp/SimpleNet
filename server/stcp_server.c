@@ -187,7 +187,7 @@ void *seghandler(void* arg) {
 	seg_t seg;
 	int srcID;
 	while (sip_recvseg(sip_conn, &srcID, &seg) > 0)
-	{
+	{	
 		//根据dest_port和src_port找到对应的TCB
 		int k = -1;
 		for (int i = 0; i < MAX_TRANSPORT_CONNECTIONS; i++){

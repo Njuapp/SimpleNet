@@ -67,8 +67,7 @@ int main() {
 		printf("fail to connect to the local SIP process\n");
 		exit(1);
 	}
-	printf("ESTABLISEHD!\n");
-	return 0;
+	
 	//初始化stcp客户端
 	stcp_client_init(sip_conn);
 	sleep(STARTDELAY);
