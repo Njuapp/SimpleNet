@@ -191,7 +191,8 @@ int main() {
 	//启动重叠网络初始化工作
 	myid = topology_getMyNodeID();
 	printf("Overlay network: Node %d initializing...\n", myid);
-
+	
+	
 	//创建一个邻居表
 	nt = nt_create();
 	//将sip_conn初始化为-1, 即还未与SIP进程连接

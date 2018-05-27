@@ -188,7 +188,7 @@ void waitSTCP() {
 	struct sockaddr_in listenaddr;
 	listenaddr.sin_addr.s_addr = htonl(INADDR_ANY);
 	listenaddr.sin_family = AF_INET;
-	listenaddr.sin_port = SIP_PORT;
+	listenaddr.sin_port = htons(SIP_PORT);
 	int listenfd = socket(AF_INET, SOCK_STREAM, 0);
 	bind(listenfd, (struct sockaddr *)&listenaddr, sizeof(listenaddr));
 	
@@ -199,6 +199,7 @@ void waitSTCP() {
 		socklen_t socklen = sizeof(stcpaddr);
 		stcp_conn = accept(listenfd, (struct sockaddr *)&stcpaddr, &socklen);
 		int destID;
+		printf("ESTABLISHED\n");
 		seg_t seg;	
 		while (getsegToSend(stcp_conn, &destID, &seg) > 0){
 			sip_pkt_t *pkt = (sip_pkt_t *)malloc(sizeof(sip_pkt_t));
@@ -217,7 +218,8 @@ void waitSTCP() {
 
 int main(int argc, char *argv[]) {
 	printf("SIP layer is starting, pls wait...\n");
-
+	
+	return 0;
 	//初始化neighbor cost table
 	nct = nbrcosttable_create();
 	nbrcosttable_print(nct);

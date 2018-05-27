@@ -68,7 +68,7 @@
 #define INFINITE_COST 999
 
 //SIP进程打开这个端口并等待来自STCP进程的连接, 你应该修改它为一个随机值以避免和其他同学的设置发生冲突.
-#define SIP_PORT 8901
+#define SIP_PORT 60795
 
 //这是广播节点ID. 
 #define BROADCAST_NODEID 9999
