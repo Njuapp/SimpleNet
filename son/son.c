@@ -23,7 +23,6 @@
 #include "../common/constants.h"
 #include "../common/pkt.h"
 #include "son.h"
-#include "../common/common.h"
 #include "../topology/topology.h"
 #include "neighbortable.h"
 
@@ -111,16 +110,16 @@ void* listen_to_neighbor(void* arg) {
 	int n = 0;
 	while ((n = recvpkt(pkt, nt[idx].conn)) > 0)
 	{
-		log("RECV A PACKET FROM %d <--\n", pkt->header.src_nodeID);
+		printf("RECV A PACKET FROM %d <--\n", pkt->header.src_nodeID);
 		if(sip_conn != -1)
 			forwardpktToSIP(pkt, sip_conn);
 	}
-	log("Unable to listen to %d, return code is %d\n", nt[idx].nodeID, n);
+	printf("Unable to listen to %d, return code is %d\n", nt[idx].nodeID, n);
 	free(pkt);
 	if (n <= 0)
 	{
 		nt[idx].conn = -1;
-		log("ENDED listen from %d\n", nt[idx].nodeID);
+		printf("ENDED listen from %d\n", nt[idx].nodeID);
 		pthread_exit(NULL);
 	}
 	return 0;
@@ -139,14 +138,14 @@ void waitSIP() {
 	listen(listenfd, 1);
 	while(1){
 		socklen_t socklen = sizeof(sipaddr);
-		log("==waiting for connection from sip==\n");
+		printf("==waiting for connection from sip==\n");
 		sip_conn = accept(listenfd, (struct sockaddr *)&sipaddr, &socklen);
-		log("==ESTABLISHED connection from sip==\n");
+		printf("==ESTABLISHED connection from sip==\n");
 		sip_pkt_t* pkt = (sip_pkt_t*)malloc(sizeof(sip_pkt_t));
 		int nextnode;
 		while (getpktToSend(pkt, &nextnode, sip_conn) > 0){
 			if(nextnode == BROADCAST_NODEID){
-				log("SEND A BROADCAST PACKET TO-->");
+				printf("SEND A BROADCAST PACKET TO-->\n");
 				for (int i = 0; i < topology_getNbrNum(); i++){
 					if(nt[i].conn != -1){
 						printf("%d ", nt[i].nodeID);
@@ -159,8 +158,9 @@ void waitSIP() {
 				for (int i = 0; i < topology_getNbrNum(); i++)
 				{
 					if(nt[i].nodeID == nextnode){
-						log("SEND A PACKET TO --> %d\n", nextnode);
+						
 						if(nt[i].conn != -1){
+							printf("SEND A PACKET TO --> %d", nt[i].nodeID);
 							sendpkt(pkt, nt[i].conn);
 						}
 						break;
@@ -170,7 +170,7 @@ void waitSIP() {
 		}
 		free(pkt);
 		sip_conn = -1;
-		log("Oops! DISCONNECTED FROM SIP !\n");
+		printf("Oops! DISCONNECTED FROM SIP !\n");
 	}
 	close(listenfd);
 }
@@ -178,7 +178,7 @@ void waitSIP() {
 //这个函数停止重叠网络, 当接收到信号SIGINT时, 该函数被调用.
 //它关闭所有的连接, 释放所有动态分配的内存.
 void son_stop() {
-	panic("SON_STOP");
+	printf("SON_STOP");
 	while (close(sip_conn) != 0)
 	{
 	}

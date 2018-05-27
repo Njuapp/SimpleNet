@@ -22,7 +22,6 @@
 #include "../common/constants.h"
 #include "../common/pkt.h"
 #include "../common/seg.h"
-#include "../common/common.h"
 #include "../topology/topology.h"
 #include "sip.h"
 #include "nbrcosttable.h"
@@ -66,10 +65,11 @@ int connectToSON() {
 void* routeupdate_daemon(void* arg) {
 	sip_pkt_t pkt;
 	pkt.header.type = ROUTE_UPDATE;
-	pkt.header.length = 0;
+	pkt.header.length = sizeof(seg_t);
 	pkt.header.dest_nodeID = BROADCAST_NODEID;
 	pkt.header.src_nodeID = topology_getMyNodeID();
 	//TODO:construct routing packet
+
 	while (son_conn != -1)
 	{
 		printf("=SEND A BROADCAST OUT=\n");
@@ -88,26 +88,26 @@ void* pkthandler(void* arg) {
 	while(son_recvpkt(pkt,son_conn)>0) {
 		if(pkt->header.type == ROUTE_UPDATE){
 			//TODO:update the routing table
-			log("Routing: received ROUTE_UPDATE from neighbor %d",pkt->header.src_nodeID);
+			printf("Routing: received ROUTE_UPDATE from neighbor %d\n",pkt->header.src_nodeID);
 		}
 		else if(pkt->header.type == SIP){
 			if(pkt->header.dest_nodeID == topology_getMyNodeID()){
 				seg_t *recvseg = (seg_t *)(&pkt->data);
 				if(stcp_conn!=-1){
 					forwardsegToSTCP(stcp_conn, pkt->header.src_nodeID, recvseg);
-					log("Forward a data from SRC(%d) to STCP", pkt->header.src_nodeID);
+					printf("Forward a data from SRC(%d) to STCP\n", pkt->header.src_nodeID);
 				}
 			}
 			else{
 				int nextID = routingtable_getnextnode(routingtable, pkt->header.dest_nodeID);
 				if(son_conn!=-1){
 					son_sendpkt(nextID, pkt, son_conn);
-					log("Routing: [%d->%d->%d]", pkt->header.src_nodeID, topology_getMyNodeID(), nextID);
+					printf("Routing: [%d->%d->%d]\n", pkt->header.src_nodeID, topology_getMyNodeID(), nextID);
 				}
 			}
 		}
 		else{
-			panic("Recevied something wrong with type of packet\n");
+			fprintf(stderr, "Recevied something wrong with type of packet\n");
 		}
 	}
 	close(son_conn);
@@ -118,7 +118,7 @@ void* pkthandler(void* arg) {
 //这个函数终止SIP进程, 当SIP进程收到信号SIGINT时会调用这个函数. 
 //它关闭所有连接, 释放所有动态分配的内存.
 void sip_stop() {
-	print("IN SIP_STOP!\n");
+	fprintf(stderr, "IN SIP_STOP!\n");
 	while (close(son_conn) != 0)
 	{
 	}
@@ -161,20 +161,24 @@ void waitSTCP() {
 int main(int argc, char *argv[]) {
 	printf("SIP layer is starting, pls wait...\n");
 
-	//初始化全局变量
+	//初始化neighbor cost table
 	nct = nbrcosttable_create();
+	nbrcosttable_print(nct);
+	return 0;
+	//初始化distance vector table
 	dv = dvtable_create();
 	dv_mutex = (pthread_mutex_t*)malloc(sizeof(pthread_mutex_t));
 	pthread_mutex_init(dv_mutex,NULL);
+	dvtable_print(dv);
+
+	//初始化routing table
 	routingtable = routingtable_create();
 	routingtable_mutex = (pthread_mutex_t*)malloc(sizeof(pthread_mutex_t));
 	pthread_mutex_init(routingtable_mutex,NULL);
+	routingtable_print(routingtable);
+
 	son_conn = -1;
 	stcp_conn = -1;
-
-	nbrcosttable_print(nct);
-	dvtable_print(dv);
-	routingtable_print(routingtable);
 
 	//注册用于终止进程的信号句柄
 	signal(SIGINT, sip_stop);

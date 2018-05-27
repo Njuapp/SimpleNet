@@ -18,7 +18,6 @@
 #include "../topology/topology.h"
 #include "stcp_client.h"
 #include "../common/seg.h"
-#include "../common/common.h"
 
 //声明tcbtable为全局变量
 client_tcb_t* tcbtable[MAX_TRANSPORT_CONNECTIONS];
@@ -169,10 +168,10 @@ int stcp_client_send(int sockfd, void* data, unsigned int length)
 {
   client_tcb_t *tp = gtcb_table[sockfd];
   if(!tp){
-    panic("sockfd not found");
+    fprintf(stderr, "sockfd not found");
   }
   if(tp->stt != CONNECTED){
-    panic("socket is not connected when sending data");
+    fprintf(stderr, "socket is not connected when sending data");
   }
   int num_seg = 0;
   num_seg = length / MAX_SEG_LEN;
@@ -181,7 +180,7 @@ int stcp_client_send(int sockfd, void* data, unsigned int length)
   char *data_to_send = (char *)data;
   for (int i = 0; i * MAX_SEG_LEN < length; i++){
     if(tp->stt != CONNECTED){
-      panic("socket is not connected when sending data");
+      fprintf(stderr, "socket is not connected when sending data");
     }
     //构造新的待发送数据段
     int seglen = min(length - i * MAX_SEG_LEN, MAX_SEG_LEN);
@@ -212,7 +211,7 @@ int stcp_client_send(int sockfd, void* data, unsigned int length)
   pthread_t sendBuf;
   int rc = pthread_create(&sendBuf, NULL, sendBufhandler, tp);
   if(rc){
-    panic("ERROR when creating thread");
+    fprintf(stderr, "ERROR when creating thread\n");
   }
   
   while(1){

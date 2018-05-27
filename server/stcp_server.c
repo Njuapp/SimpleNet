@@ -17,7 +17,6 @@
 #include "stcp_server.h"
 #include "../topology/topology.h"
 #include "../common/constants.h"
-#include "../common/common.h"
 
 //声明tcbtable为全局变量
 server_tcb_t* tcbtable[MAX_TRANSPORT_CONNECTIONS];
@@ -246,7 +245,7 @@ void *seghandler(void* arg) {
 					pthread_t fin_clk_thd;
 					int rc = pthread_create(&fin_clk_thd, NULL, finclock, tp);
 					if(rc){
-						fprintf(stderr, "ERROR: failed when creating a FIN_CLOCK\n");
+						fprintf(stderr, "ERROR: failed when creating a FIN_CLOCK");
 						exit(-1);
 					}
 				case CLOSEWAIT:
@@ -279,7 +278,7 @@ void *seghandler(void* arg) {
 		  datack_seg.header.ack_num = tp->expect_seqNum;
 		  datack_seg.header.type = DATAACK;
 		  sip_sendseg(gsip_conn, srcID, &datack_seg);
-		  print("send DATA ACK to client\n");
+		  printf("send DATA ACK to client\n");
 	  
 			}
 	}
