@@ -180,13 +180,13 @@ int main(int argc, char *argv[]) {
 	dv_mutex = (pthread_mutex_t*)malloc(sizeof(pthread_mutex_t));
 	pthread_mutex_init(dv_mutex,NULL);
 	dvtable_print(dv);
-	
+
 	//初始化routing table
 	routingtable = routingtable_create();
 	routingtable_mutex = (pthread_mutex_t*)malloc(sizeof(pthread_mutex_t));
 	pthread_mutex_init(routingtable_mutex,NULL);
 	routingtable_print(routingtable);
-
+	return 0;
 	son_conn = -1;
 	stcp_conn = -1;
 

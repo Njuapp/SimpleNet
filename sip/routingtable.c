@@ -12,7 +12,7 @@
 //它将输入的目的节点ID作为哈希键,并返回针对这个目的节点ID的槽号作为哈希值.
 int makehash(int node)
 {
-  return 0;
+  return node % MAX_ROUTINGTABLE_SLOTS;
 }
 
 //这个函数动态创建路由表.表中的所有条目都被初始化为NULL指针.
@@ -20,7 +20,20 @@ int makehash(int node)
 //该函数返回动态创建的路由表结构.
 routingtable_t* routingtable_create()
 {
-  return 0;
+  int nbrs = topology_getNbrNum();
+  int *nbrArr = topology_getNbrArray();
+  routingtable_t *rt = (routingtable_t*)malloc(sizeof(routingtable_t));
+  memset(rt, 0, sizeof(routingtable_t));
+  for (int i = 0; i < nbrs; i++)
+  {
+    int nbr = nbrArr[i];
+    int idx = makehash(nbr);
+    routingtable_entry_t *rouentry = (routingtable_entry_t *)malloc(sizeof(routingtable_entry_t));
+    rouentry->next = rt->hash[idx];
+    rouentry->destNodeID = nbr;
+    rouentry->nextNodeID = nbr;
+  }
+  return rt;
 }
 
 //这个函数删除路由表.
@@ -52,5 +65,13 @@ int routingtable_getnextnode(routingtable_t* routingtable, int destNodeID)
 //这个函数打印路由表的内容
 void routingtable_print(routingtable_t* routingtable)
 {
-  return;
+  printf("---ROUTE---\n");
+  for (int i = 0; i < MAX_ROUTINGTABLE_SLOTS; i++){
+    routingtable_entry_t *rouentry = routingtable->hash[i];
+    while(rouentry){
+      printf("|%4d|%4d|\n", rouentry->destNodeID, rouentry->nextNodeID);
+      rouentry = rouentry->next;
+    }
+  }
+  printf("---TABLE---\n");
 }
