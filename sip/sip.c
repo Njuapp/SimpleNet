@@ -70,13 +70,17 @@ void* routeupdate_daemon(void* arg) {
 	pkt.header.src_nodeID = topology_getMyNodeID();
 	//TODO:construct routing packet
 	int nbrs = topology_getNbrNum();
-	memcpy(&pkt.data, &dv[nbrs], sizeof(dv_t));
 	while (son_conn != -1)
 	{
-		printf("=SEND A BROADCAST OUT=\n");
+		memcpy(&pkt.data, &dv[nbrs], sizeof(dv_t));
+		if(stcp_conn == -1)
+			printf("=SEND A BROADCAST OUT=\n");
 		if(son_conn != -1)
 			son_sendpkt(BROADCAST_NODEID, &pkt, son_conn);
-		sleep(ROUTEUPDATE_INTERVAL);
+		if(stcp_conn == -1)
+			sleep(ROUTEUPDATE_INTERVAL);
+		else
+			sleep(ROUTEUPDATE_INTERVAL * 3);
 	}
 	pthread_exit(NULL);
 }
@@ -147,6 +151,11 @@ void* pkthandler(void* arg) {
 			}
 			else{
 				int nextID = routingtable_getnextnode(routingtable, pkt->header.dest_nodeID);
+				if(nextID < 0)
+				{
+					fprintf(stderr, "Invalid nextNode!\n");
+					pthread_exit(NULL);
+				}
 				if(son_conn!=-1){
 					son_sendpkt(nextID, pkt, son_conn);
 					printf("Routing: [%d->%d->%d]\n", pkt->header.src_nodeID, topology_getMyNodeID(), nextID);
@@ -188,7 +197,7 @@ void waitSTCP() {
 		listen(listenfd, 1);
 		struct sockaddr_in stcpaddr;
 		socklen_t socklen = sizeof(stcpaddr);
-		int stcp_conn = accept(listenfd, (struct sockaddr *)&stcpaddr, &socklen);
+		stcp_conn = accept(listenfd, (struct sockaddr *)&stcpaddr, &socklen);
 		int destID;
 		seg_t seg;	
 		while (getsegToSend(stcp_conn, &destID, &seg) > 0){
@@ -201,8 +210,9 @@ void waitSTCP() {
 			int nextID = routingtable_getnextnode(routingtable, destID);
 			son_sendpkt(nextID, pkt, son_conn);
 		}
+		stcp_conn = -1;
 	}
-  return;
+	return;
 }
 
 int main(int argc, char *argv[]) {

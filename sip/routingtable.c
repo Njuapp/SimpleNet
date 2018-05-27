@@ -87,7 +87,16 @@ void routingtable_setnextnode(routingtable_t* routingtable, int destNodeID, int 
 //然后遍历该槽中的链表以搜索路由条目.如果发现destNodeID, 就返回针对这个目的节点的下一跳节点ID, 否则返回-1.
 int routingtable_getnextnode(routingtable_t* routingtable, int destNodeID)
 {
-  return 0;
+  int idx = makehash(destNodeID);
+  routingtable_entry_t *entry = routingtable->hash[idx];
+  while(entry){
+    if(entry->destNodeID != destNodeID){
+      entry = entry->next;
+      continue;
+    }
+    return entry->nextNodeID;
+  }
+  return -1;
 }
 
 //这个函数打印路由表的内容
