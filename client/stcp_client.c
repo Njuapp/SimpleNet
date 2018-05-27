@@ -160,7 +160,7 @@ void* sendBufhandler(void* clienttcb) {
 	  }  
 	}
 	pthread_mutex_unlock(tp->bufMutex);
-	sleep(1);
+	usleep(SENDBUF_POLLING_INTERVAL/1000);
   }
   return NULL;
 }
@@ -328,9 +328,9 @@ void* seghandler(void* arg)
       //FSM
       switch(tp->stt){
         case SYNSENT:
-         tp->stt = CONNECTED;
-         tp->next_seqNum = seg.header.ack_num;
-         break;
+        tp->stt = CONNECTED;
+        tp->next_seqNum = seg.header.ack_num;
+        break;
         default:
           break;
       }
@@ -352,8 +352,8 @@ void* seghandler(void* arg)
 		case CONNECTED: 
 		  pthread_mutex_lock(tp->bufMutex);
 		  while (tp->sendBufHead != NULL &&
-			  	 tp->sendBufHead != tp->sendBufunSent &&
-  				 tp->sendBufHead->seg.header.seq_num < seg.header.ack_num) {
+			  	tp->sendBufHead != tp->sendBufunSent &&
+  				tp->sendBufHead->seg.header.seq_num < seg.header.ack_num) {
 			segBuf_t* segbuf_p = tp->sendBufHead;
 			tp->sendBufHead = segbuf_p->next;
 			free(segbuf_p);

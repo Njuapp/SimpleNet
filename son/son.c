@@ -110,7 +110,8 @@ void* listen_to_neighbor(void* arg) {
 	int n = 0;
 	while ((n = recvpkt(pkt, nt[idx].conn)) > 0)
 	{
-		printf("RECV A PACKET FROM %d <--\n", pkt->header.src_nodeID);
+		if(pkt->header.dest_nodeID != BROADCAST_NODEID)
+			printf("RECV A PACKET FROM %d <--\n", pkt->header.src_nodeID);
 		if(sip_conn != -1)
 			forwardpktToSIP(pkt, sip_conn);
 	}
@@ -145,14 +146,14 @@ void waitSIP() {
 		int nextnode;
 		while (getpktToSend(pkt, &nextnode, sip_conn) > 0){
 			if(nextnode == BROADCAST_NODEID){
-				printf("SEND A BROADCAST PACKET TO-->\n");
+				//printf("SEND A BROADCAST PACKET TO-->\n");
 				for (int i = 0; i < topology_getNbrNum(); i++){
 					if(nt[i].conn != -1){
-						printf("%d ", nt[i].nodeID);
+						//printf("%d ", nt[i].nodeID);
 						sendpkt(pkt, nt[i].conn);
 					}
 				}
-				printf("\n");
+				//printf("\n");
 			}
 			else{
 				for (int i = 0; i < topology_getNbrNum(); i++)
@@ -160,7 +161,7 @@ void waitSIP() {
 					if(nt[i].nodeID == nextnode){
 						
 						if(nt[i].conn != -1){
-							printf("SEND A PACKET TO --> %d", nt[i].nodeID);
+							printf("SEND A PACKET TO --> %d\n", nt[i].nodeID);
 							sendpkt(pkt, nt[i].conn);
 						}
 						break;

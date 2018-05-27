@@ -81,6 +81,7 @@ int topology_getNbrNum()
     if(!strcmp(node2, hostname))
       cnt++;
   }
+  fclose(fp);
   return cnt;
 }
 
@@ -129,6 +130,7 @@ int* topology_getNbrArray()
     }
   }
   assert(cnt == nbrs);
+  fclose(fp);
   return nbrArr;
 }
 
@@ -156,5 +158,6 @@ unsigned int topology_getCost(int fromNodeID, int toNodeID)
       return cost;
     }
   }
+  fclose(fp);
   return INFINITE_COST;
 }

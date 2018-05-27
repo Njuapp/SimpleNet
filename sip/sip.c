@@ -73,18 +73,49 @@ void* routeupdate_daemon(void* arg) {
 	while (son_conn != -1)
 	{
 		memcpy(&pkt.data, &dv[nbrs], sizeof(dv_t));
-		if(stcp_conn == -1)
-			printf("=SEND A BROADCAST OUT=\n");
-		if(son_conn != -1)
-			son_sendpkt(BROADCAST_NODEID, &pkt, son_conn);
-		if(stcp_conn == -1)
-			sleep(ROUTEUPDATE_INTERVAL);
-		else
-			sleep(ROUTEUPDATE_INTERVAL * 3);
+		//if(stcp_conn == -1)
+		//printf("=SEND A BROADCAST OUT=\n");
+		son_sendpkt(BROADCAST_NODEID, &pkt, son_conn);
+		sleep(ROUTEUPDATE_INTERVAL);
 	}
 	pthread_exit(NULL);
 }
-
+#define SEND 987
+#define RECV 789
+void print_seg_s(seg_t* segPtr, int sendorrecv){
+	if(sendorrecv == SEND)
+		printf("-------SEND:-----\n");
+	else
+		printf("-------RECV:-----\n");
+	printf("|SOURCE PORT: %d|\n", segPtr->header.src_port);
+	printf("|DEST   PORT: %d|\n", segPtr->header.dest_port);
+	printf("|SEQ     NUM: %d|\n", segPtr->header.seq_num);
+	printf("|ACK     NUM: %d|\n", segPtr->header.ack_num);
+	printf("|TYPE   : ");
+	switch(segPtr->header.type){
+		case SYNACK:
+			printf("ACK   |\n");
+			break;
+		case SYN:
+			printf("SYN   |\n");
+			break;
+		case FIN:
+			printf("FIN   |\n");
+			break;
+		case FINACK:
+			printf("FINACK|\n");
+			break;
+		case DATA:
+			printf("DATA  |\n");
+			break;
+		case DATAACK:
+			printf("DATACK|\n");
+			break;
+		default:
+			printf("UNKOWN |\n");
+	}
+	printf("-----------------\n");
+}
 //这个线程处理来自SON进程的进入报文. 它通过调用son_recvpkt()接收来自SON进程的报文.
 //如果报文是SIP报文,并且目的节点就是本节点,就转发报文给STCP进程. 如果目的节点不是本节点,
 //就根据路由表转发报文给下一跳.如果报文是路由更新报文,就更新距离矢量表和路由表.
@@ -142,10 +173,13 @@ void* pkthandler(void* arg) {
 			
 		}
 		else if(pkt->header.type == SIP){
+			printf("Get a SIP packet\n");
 			if(pkt->header.dest_nodeID == topology_getMyNodeID()){
-				seg_t *recvseg = (seg_t *)(&pkt->data);
+				seg_t seg_data;
+				memcpy(&seg_data, pkt->data, sizeof(seg_t));
 				if(stcp_conn!=-1){
-					forwardsegToSTCP(stcp_conn, pkt->header.src_nodeID, recvseg);
+					forwardsegToSTCP(stcp_conn, pkt->header.src_nodeID, &seg_data);
+					print_seg_s(&seg_data, RECV);
 					printf("Forward a data from SRC(%d) to STCP\n", pkt->header.src_nodeID);
 				}
 			}
@@ -199,7 +233,7 @@ void waitSTCP() {
 		socklen_t socklen = sizeof(stcpaddr);
 		stcp_conn = accept(listenfd, (struct sockaddr *)&stcpaddr, &socklen);
 		int destID;
-		printf("ESTABLISHED\n");
+		printf("ESTABLISHED TO STCP\n");
 		seg_t seg;	
 		while (getsegToSend(stcp_conn, &destID, &seg) > 0){
 			sip_pkt_t *pkt = (sip_pkt_t *)malloc(sizeof(sip_pkt_t));
@@ -207,7 +241,8 @@ void waitSTCP() {
 			pkt->header.dest_nodeID = destID;
 			pkt->header.type = SIP;
 			pkt->header.length = sizeof(seg_t);
-			memcpy(&pkt->data, &seg, sizeof(seg_t));
+			memcpy(pkt->data, &seg, sizeof(seg_t));
+			printf("Get a segment to send\n");
 			int nextID = routingtable_getnextnode(routingtable, destID);
 			son_sendpkt(nextID, pkt, son_conn);
 		}
@@ -259,7 +294,6 @@ int main(int argc, char *argv[]) {
 	printf("SIP layer is started...\n");
 	printf("waiting for routes to be established\n");
 	sleep(SIP_WAITTIME);
-	dvtable_print(dv);
 	routingtable_print(routingtable);
 
 	//等待来自STCP进程的连接

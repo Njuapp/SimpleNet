@@ -59,13 +59,13 @@ int main() {
 	srand(time(NULL));
 
 	//���ӵ�SIP���̲����TCP�׽���������
-	int sip_conn = connectToSIP();
-	if(sip_conn<0) {
+	gsip_conn = connectToSIP();
+	if(gsip_conn<0) {
 		printf("can not connect to the local SIP process\n");
 	}
 
 	//��ʼ��STCP������
-	stcp_server_init(sip_conn);
+	stcp_server_init(gsip_conn);
 
 	//�ڶ˿�SERVERPORT1�ϴ���STCP�������׽��� 
 	int sockfd= stcp_server_sock(SERVERPORT1);
@@ -99,5 +99,5 @@ int main() {
 	}				
 
 	//�Ͽ���SIP����֮�������
-	disconnectToSIP(sip_conn);
+	disconnectToSIP(gsip_conn);
 }

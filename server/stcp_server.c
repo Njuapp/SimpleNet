@@ -21,7 +21,7 @@
 //声明tcbtable为全局变量
 server_tcb_t* tcbtable[MAX_TRANSPORT_CONNECTIONS];
 //声明到SIP进程的连接为全局变量
-int sip_conn;
+int gsip_conn;
 
 /*********************************************************************/
 //
@@ -186,7 +186,7 @@ void *finclock(void* arg) {
 void *seghandler(void* arg) {
 	seg_t seg;
 	int srcID;
-	while (sip_recvseg(sip_conn, &srcID, &seg) > 0)
+	while (sip_recvseg(gsip_conn, &srcID, &seg) > 0)
 	{	
 		//根据dest_port和src_port找到对应的TCB
 		int k = -1;
