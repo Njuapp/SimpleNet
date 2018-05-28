@@ -134,36 +134,6 @@ int stcp_client_connect(int sockfd, int nodeID, unsigned int server_port)
 // 因为用户数据被分片为固定大小的STCP段, 所以一次stcp_client_send调用可能会产生多个segBuf
 // 被添加到发送缓冲区链表中. 如果调用成功, 数据就被放入TCB发送缓冲区链表中, 根据滑动窗口的情况,
 // 数据可能被传输到网络中, 或在队列中等待传输.
-void* sendBufhandler(void* clienttcb) {
-  client_tcb_t* tp = (client_tcb_t*)clienttcb;
-  if(tp == NULL) {
-	fprintf(stderr, "socket does not exist\n");
-	exit(-1);
-  }
-  while(1) {
-	pthread_mutex_lock(tp->bufMutex);
-	if(tp->sendBufHead == NULL) {
-	  assert(tp->unAck_segNum == 0);
-  	  pthread_mutex_unlock(tp->bufMutex);
-	  pthread_exit(NULL);
-	} 
-  else {
-	  segBuf_t* seg_p = tp->sendBufHead;
-	  while(seg_p != tp->sendBufunSent) {
-		  sip_sendseg(gsip_sonn , tp->server_nodeID, &seg_p->seg);
-		  seg_p = seg_p->next;
-	  }
-
-	  for (; tp->unAck_segNum < GBN_WINDOW && tp->sendBufunSent != NULL; 
-		  tp->unAck_segNum++, tp->sendBufunSent = tp->sendBufunSent->next) {
-		  sip_sendseg(gsip_sonn, tp->server_nodeID, &tp->sendBufunSent->seg);
-	  }  
-	}
-	pthread_mutex_unlock(tp->bufMutex);
-	usleep(SENDBUF_POLLING_INTERVAL/1000);
-  }
-  return NULL;
-}
 int stcp_client_send(int sockfd, void* data, unsigned int length) 
 {
   client_tcb_t *tp = gtcb_table[sockfd];
@@ -175,8 +145,10 @@ int stcp_client_send(int sockfd, void* data, unsigned int length)
   }
   int num_seg = 0;
   num_seg = length / MAX_SEG_LEN;
-  if(length % MAX_SEG_LEN)
+  
+  if (length % MAX_SEG_LEN)
     num_seg += 1;
+  printf("%d seg(s), %u\n", num_seg, length);
   char *data_to_send = (char *)data;
   for (int i = 0; i * MAX_SEG_LEN < length; i++){
     if(tp->stt != CONNECTED){
@@ -208,8 +180,12 @@ int stcp_client_send(int sockfd, void* data, unsigned int length)
       tp->sendBufTail = segBuf;
     }
   }
+  printf("==TO SEND: %d seg(s) (%d)[%d-]%d-%d==\n\n", num_seg, tp->unAck_segNum, 
+            tp->sendBufHead->seg.header.seq_num ,
+            tp->sendBufunSent->seg.header.seq_num,
+            tp->sendBufTail->seg.header.seq_num);
   pthread_t sendBuf;
-  int rc = pthread_create(&sendBuf, NULL, sendBufhandler, tp);
+  int rc = pthread_create(&sendBuf, NULL, sendBuf_timer, tp);
   if(rc){
     fprintf(stderr, "ERROR when creating thread\n");
   }
@@ -344,31 +320,27 @@ void* seghandler(void* arg)
           break;
       }
     }
-    else if(segtype == DATAACK){
-      printf("receive DATA ACK\n");
-	  switch (tp->stt) {
-		case CLOSED: break;
-		case SYNSENT: break;
-		case CONNECTED: 
-		  pthread_mutex_lock(tp->bufMutex);
-		  while (tp->sendBufHead != NULL &&
-			  	tp->sendBufHead != tp->sendBufunSent &&
-  				tp->sendBufHead->seg.header.seq_num < seg.header.ack_num) {
-			segBuf_t* segbuf_p = tp->sendBufHead;
-			tp->sendBufHead = segbuf_p->next;
-			free(segbuf_p);
-			tp->unAck_segNum--;
-		  }
-
-		  if(tp->sendBufHead == NULL) {
-			tp->sendBufunSent = tp->sendBufTail = NULL;
-			tp->unAck_segNum = 0;
-		  }
-		  pthread_mutex_unlock(tp->bufMutex);
-		  break;
-		case FINWAIT: break;
-		default: break;
-	  }
+    else if(segtype == DATAACK && tp->stt == CONNECTED 
+    && tp->sendBufHead->seg.header.seq_num < seg.header.ack_num){
+      printf("receive DATA ACK %d...\n", seg.header.ack_num);
+      pthread_mutex_lock(tp->bufMutex);
+      int cnt = 0;
+      while (tp->sendBufHead != NULL &&
+            tp->sendBufHead != tp->sendBufunSent &&
+            tp->sendBufHead->seg.header.seq_num < seg.header.ack_num)
+      {
+        segBuf_t* segbuf_p = tp->sendBufHead;
+        
+        tp->sendBufHead = segbuf_p->next;
+        free(segbuf_p);
+        tp->unAck_segNum--;
+        cnt++;
+      }
+      if(tp->sendBufHead == NULL) {
+        tp->sendBufunSent = tp->sendBufTail = NULL;
+        tp->unAck_segNum = 0;
+      }
+      pthread_mutex_unlock(tp->bufMutex);
     }
   }
   return 0;
@@ -380,6 +352,44 @@ void* seghandler(void* arg)
 //当超时事件发生时, 重新发送所有已发送但未被确认段. 当发送缓冲区为空时, 这个线程将终止.
 void* sendBuf_timer(void* clienttcb) 
 {
-	return 0;
+	client_tcb_t* tp = (client_tcb_t*)clienttcb;
+  if(tp == NULL) {
+    fprintf(stderr, "socket does not exist\n");
+    exit(-1);
+  }
+
+  while(1) {
+    usleep(SENDBUF_POLLING_INTERVAL/1000);
+    pthread_mutex_lock(tp->bufMutex);
+    if(tp->sendBufHead == NULL) {
+      assert(tp->unAck_segNum == 0);
+      pthread_mutex_unlock(tp->bufMutex);
+      printf("The sendBuftimer exit\n");
+      pthread_exit(NULL);
+    } 
+    else {
+      int cnt = 0;
+      for (; tp->unAck_segNum < GBN_WINDOW && tp->sendBufunSent != NULL;
+          tp->sendBufunSent = tp->sendBufunSent->next)
+      {
+        tp->sendBufunSent->sentTime = time(NULL);
+        sip_sendseg(gsip_sonn, tp->server_nodeID, &tp->sendBufunSent->seg);
+        printf("SEND OUT SEG %d\n", tp->sendBufunSent->seg.header.seq_num);
+        tp->unAck_segNum++;
+        cnt++;
+      }
+      if (time(NULL) - tp->sendBufHead->sentTime > DATA_TIMEOUT)
+      {
+        for (segBuf_t *seg_p = tp->sendBufHead; seg_p != tp->sendBufunSent;seg_p = seg_p->next){
+          printf("RESEND SEG %d\n\n", seg_p->seg.header.seq_num);
+          sip_sendseg(gsip_sonn, tp->server_nodeID, &seg_p->seg);
+        }
+      }
+
+    }
+    pthread_mutex_unlock(tp->bufMutex);
+    
+  }
+  return NULL;
 }
 

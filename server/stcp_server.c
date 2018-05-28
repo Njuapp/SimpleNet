@@ -130,11 +130,11 @@ int stcp_server_recv(int sockfd, void* buf, unsigned int length) {
 		  memcpy(buf, tp->recvBuf, length);
 		  tp->usedBufLen -= length;
 		  memcpy(tp->recvBuf, tp->recvBuf + length, tp->usedBufLen);
-  		  pthread_mutex_unlock(tp->bufMutex);
+  		pthread_mutex_unlock(tp->bufMutex);
 		  break;
 		} else {
-  		  pthread_mutex_unlock(tp->bufMutex);
-  		  sleep(RECVBUF_POLLING_INTERVAL);
+  		pthread_mutex_unlock(tp->bufMutex);
+  	  sleep(RECVBUF_POLLING_INTERVAL);
 		}
 	  }
 	  break;
@@ -261,7 +261,7 @@ void *seghandler(void* arg) {
 					printf("===send a FINACK to client===\n");
 					break;
 			}
-		}else if (segtype == DATA && tp->stt == CONNECTED) {
+		}else if (segtype == DATA && tp->stt == CONNECTED ) {
 			
 			
 		  if (tp->expect_seqNum == seg.header.seq_num) {
@@ -270,17 +270,18 @@ void *seghandler(void* arg) {
 				memcpy(tp->recvBuf + tp->usedBufLen, seg.data, seg.header.length);
 				tp->usedBufLen += seg.header.length;
 				pthread_mutex_unlock(tp->bufMutex);
+				seg_t datack_seg;
+				datack_seg.header.src_port = tp->server_portNum;
+				datack_seg.header.dest_port = tp->client_portNum;
+				datack_seg.header.seq_num = 0;
+				datack_seg.header.ack_num = tp->expect_seqNum;
+				datack_seg.header.type = DATAACK;
+				sip_sendseg(gsip_conn, srcID, &datack_seg);
+				printf("send DATA ACK on (%d)to client\n", seg.header.seq_num);
 		  }
-		  seg_t datack_seg;
-		  datack_seg.header.src_port = tp->server_portNum;
-		  datack_seg.header.dest_port = tp->client_portNum;
-		  datack_seg.header.seq_num = 0;
-		  datack_seg.header.ack_num = tp->expect_seqNum;
-		  datack_seg.header.type = DATAACK;
-		  sip_sendseg(gsip_conn, srcID, &datack_seg);
-		  printf("send DATA ACK to client\n");
+		
 	  
-			}
+		}
 	}
 	pthread_exit(NULL);
 	return 0;

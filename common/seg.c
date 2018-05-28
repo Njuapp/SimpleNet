@@ -7,6 +7,7 @@
 #define SEND 987
 #define RECV 789
 
+/*
 void print_seg(seg_t* segPtr, int sendorrecv){
 	if(sendorrecv == SEND)
 		printf("-------SEND:-----\n");
@@ -40,7 +41,7 @@ void print_seg(seg_t* segPtr, int sendorrecv){
 			printf("UNKOWN |\n");
 	}
 	printf("-----------------\n");
-}
+}*/
 
 //STCP进程使用这个函数发送sendseg_arg_t结构(包含段及其目的节点ID)给SIP进程.
 //参数sip_conn是在STCP进程和SIP进程之间连接的TCP描述符.
@@ -52,7 +53,6 @@ int sip_sendseg(int sip_conn, int dest_nodeID, seg_t* segPtr)
 	memcpy(&sendseg->seg, segPtr, sizeof(seg_t));
 	sendseg->nodeID = dest_nodeID;
 	send(sip_conn, sendseg, sizeof(sendseg_arg_t), 0);
-	print_seg(segPtr, SEND);
 	send(sip_conn, "!#", 2, 0);
 	return 1;
 }
@@ -78,7 +78,6 @@ int sip_recvseg(int sip_conn, int* src_nodeID, seg_t* segPtr)
 	int n = 0;
 	while ((n= recv(sip_conn, &tmp, 1, 0)) > 0)
 	{
-		print_seg(segPtr, RECV);
 		switch(state){
 			case SEGSTART1:
 				if(tmp == '!')
