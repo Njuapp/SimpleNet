@@ -116,6 +116,14 @@ void* listen_to_neighbor(void* arg) {
 			forwardpktToSIP(pkt, sip_conn);
 	}
 	printf("Unable to listen to %d, return code is %d\n", nt[idx].nodeID, n);
+	if(sip_conn!=-1){
+		pkt->header.length = 0;
+		pkt->header.src_nodeID = nt[idx].nodeID;
+		pkt->header.dest_nodeID = BROADCAST_NODEID;
+		pkt->header.type = DIE;
+		printf("Forward to SIP about the failure of %d\n", nt[idx].nodeID);
+		forwardpktToSIP(pkt, sip_conn);
+	}
 	free(pkt);
 	if (n <= 0)
 	{

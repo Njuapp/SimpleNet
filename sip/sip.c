@@ -134,20 +134,6 @@ void* pkthandler(void* arg) {
 					break;
 				}
 			}
-			/*
-			printf("+++ROUTING+++\n");
-			for (int i = 0; i < topology_getNodeNum(); i++)
-			{
-				printf("%4d|", recv_dv->dvEntry[i].nodeID);
-			}
-			printf("\n");
-			for (int i = 0; i < topology_getNodeNum(); i++)
-			{
-				printf("%4d|", recv_dv->dvEntry[i].cost);
-			}
-			printf("\n");
-			*/
-
 			if (k == -1)
 			{
 				fprintf(stderr, "Invalid routing packet!\n");
@@ -155,7 +141,7 @@ void* pkthandler(void* arg) {
 				}
 			for (int i = 0; i < topology_getNodeNum(); i++)
 			{
-				dv[k].dvEntry[k].cost = recv_dv->dvEntry[k].cost;
+				dv[k].dvEntry[i].cost = recv_dv->dvEntry[i].cost;
 			}
 			for (int i = 0; i < topology_getNodeNum(); i++)
 			{
@@ -171,6 +157,13 @@ void* pkthandler(void* arg) {
 				}
 			}
 			
+		}
+		else if(pkt->header.type == DIE){
+			printf("Node %d is down!\n", pkt->header.src_nodeID);
+			dvtable_destroy(dv);
+			dv = dvtable_create();
+			routingtable_destroy(routingtable);
+			routingtable = routingtable_create();
 		}
 		else if(pkt->header.type == SIP){
 			printf("Get a SIP packet\n");
