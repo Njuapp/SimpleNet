@@ -18,20 +18,35 @@
 #define	CONNECTED 3
 #define	CLOSEWAIT 4
 
+//在发送缓冲区链表中存储段的单元.
+typedef struct segBuf {
+        seg_t seg;
+        unsigned int sentTime;
+        struct segBuf* next;
+} segBuf_t;
+
 //服务器传输控制块. 一个STCP连接的服务器端使用这个数据结构记录连接信息.
-typedef struct server_tcb {
+typedef struct tcb {
 	unsigned int server_nodeID;        //服务器节点ID, 类似IP地址
 	unsigned int server_portNum;       //服务器端口号
 	unsigned int client_nodeID;     //客户端节点ID, 类似IP地址
 	unsigned int client_portNum;    //客户端端口号
 	unsigned int stt;         	//服务器状态
+	
+	unsigned int next_seqNum;       //新段准备使用的下一个序号 
+	pthread_mutex_t* sendbufMutex;      //发送缓冲区互斥量
+	segBuf_t* sendBufHead;          //发送缓冲区头
+	segBuf_t* sendBufunSent;        //发送缓冲区中的第一个未发送段
+	segBuf_t* sendBufTail;          //发送缓冲区尾
+	unsigned int unAck_segNum;      //已发送但未收到确认段的数量
+
 	unsigned int expect_seqNum;     //服务器期待的数据序号	
 	char* recvBuf;                  //指向接收缓冲区的指针
 	unsigned int  usedBufLen;       //接收缓冲区中已接收数据的大小
-	pthread_mutex_t* bufMutex;      //指向一个互斥量的指针, 该互斥量用于对接收缓冲区的访问
-} server_tcb_t;
+	pthread_mutex_t* recvbufMutex;      //指向一个互斥量的指针, 该互斥量用于对接收缓冲区的访问
+} tcb_t;
 
-server_tcb_t* gtcb_table[MAX_TRANSPORT_CONNECTIONS];
+tcb_t* gtcb_table[MAX_TRANSPORT_CONNECTIONS];
 int gsip_conn;
 //
 //  用于服务器端应用程序的STCP套接字API. 
@@ -72,7 +87,22 @@ int stcp_server_accept(int sockfd);
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //
 
-int stcp_server_recv(int sockfd, void* buf, unsigned int length);
+int stcp_send(int sockfd, void* data, unsigned int length);
+
+// 发送数据给STCP客户端. 这个函数使用套接字ID找到TCB表中的条目.
+// 然后它使用提供的数据创建segBuf, 将它附加到发送缓冲区链表中.
+// 如果发送缓冲区在插入数据之前为空, 一个名为sendbuf_timer的线程就会启动.
+// 每隔SENDBUF_ROLLING_INTERVAL时间查询发送缓冲区以检查是否有超时事件发生. 
+// 这个函数在成功时返回1，否则返回-1. 
+// stcp_client_send是一个非阻塞函数调用.
+// 因为用户数据被分片为固定大小的STCP段, 所以一次stcp_client_send调用可能会产生多个segBuf
+// 被添加到发送缓冲区链表中. 如果调用成功, 数据就被放入TCB发送缓冲区链表中, 根据滑动窗口的情况,
+// 数据可能被传输到网络中, 或在队列中等待传输.
+//
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+//
+
+int stcp_recv(int sockfd, void* buf, unsigned int length);
 
 // 接收来自STCP客户端的数据. 请回忆STCP使用的是单向传输, 数据从客户端发送到服务器端.
 // 信号/控制信息(如SYN, SYNACK等)则是双向传递. 这个函数每隔RECVBUF_POLLING_INTERVAL时间
@@ -100,4 +130,9 @@ void* seghandler(void* arg);
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //
 
+void* sendBuf_timer(void* clienttcb);
+//这个线程持续轮询发送缓冲区以触发超时事件. 如果发送缓冲区非空, 它应一直运行.
+//如果(当前时间 - 第一个已发送但未被确认段的发送时间) > DATA_TIMEOUT, 就发生一次超时事件.
+// 当超时事件发生时, 重新发送所有已发送但未被确认段. 当发送缓冲区为空时, 这个线程将终止.
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 #endif

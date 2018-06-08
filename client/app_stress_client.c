@@ -95,21 +95,17 @@ int main() {
 	}
 	printf("client connected to server, client port:%d, server port %d\n",CLIENTPORT1,SERVERPORT1);
 	
-	//获取sendthis.txt文件长度, 创建缓冲区并读取文件中的数据
-	FILE *f;
-	f = fopen("sendthis.txt","r");
-	assert(f!=NULL);
-	fseek(f,0,SEEK_END);
-	int fileLen = ftell(f);
-	fseek(f,0,SEEK_SET);
-	char *buffer = (char*)malloc(fileLen);
-	fread(buffer,fileLen,1,f);
+	int fileLen;
+	stcp_recv(sockfd,&fileLen,sizeof(int));
+	char* buf = (char*) malloc(fileLen);
+	stcp_recv(sockfd,buf,fileLen);
+
+	FILE* f;
+	f = fopen("receivedtext.txt","a");
+	fwrite(buf,fileLen,1,f);
 	fclose(f);
-	//首先发送文件长度, 然后发送整个文件.
-	stcp_client_send(sockfd,&fileLen,sizeof(int));
-    stcp_client_send(sockfd, buffer, fileLen);
-	free(buffer);
-	//等待一段时间, 然后关闭连接.
+	free(buf);
+	
 	sleep(WAITTIME);
 
 	if(stcp_client_disconnect(sockfd)<0) {

@@ -20,7 +20,7 @@
 #include "../common/seg.h"
 
 //声明tcbtable为全局变量
-client_tcb_t* tcbtable[MAX_TRANSPORT_CONNECTIONS];
+tcb_t* tcbtable[MAX_TRANSPORT_CONNECTIONS];
 //声明到SIP进程的TCP连接为全局变量
 int sip_conn;
 
@@ -29,7 +29,7 @@ int sip_conn;
 //STCP API实现
 //
 /*********************************************************************/
-client_tcb_t* gtcb_table[MAX_TRANSPORT_CONNECTIONS];
+tcb_t* gtcb_table[MAX_TRANSPORT_CONNECTIONS];
 int gsip_sonn;
 // 这个函数初始化TCB表, 将所有条目标记为NULL.  
 // 它还针对TCP套接字描述符conn初始化一个STCP层的全局变量, 该变量作为sip_sendseg和sip_recvseg的输入参数.
@@ -65,14 +65,17 @@ int stcp_client_sock(unsigned int client_port)
   if(k == -1)
     return -1;
   //使用malloc()为该条目创建一个新的TCB条目.
-  gtcb_table[k] = (client_tcb_t *)malloc(sizeof(client_tcb_t));
+  gtcb_table[k] = (tcb_t *)malloc(sizeof(tcb_t));
   //初始化TCB中的字段
-  memset(gtcb_table[k], 0, sizeof(client_tcb_t));
+  memset(gtcb_table[k], 0, sizeof(tcb_t));
   gtcb_table[k]->client_nodeID = topology_getMyNodeID();
   gtcb_table[k]->client_portNum = client_port;
   gtcb_table[k]->stt = CLOSED;
-  gtcb_table[k]->bufMutex = (pthread_mutex_t *)malloc(sizeof(pthread_mutex_t));
-  pthread_mutex_init(gtcb_table[k]->bufMutex, NULL);
+  gtcb_table[k]->sendbufMutex = (pthread_mutex_t *)malloc(sizeof(pthread_mutex_t));
+  pthread_mutex_init(gtcb_table[k]->sendbufMutex, NULL);
+  gtcb_table[k]->recvBuf = (char *)malloc(sizeof(char) * RECEIVE_BUF_SIZE);
+  gtcb_table[k]->recvbufMutex = (pthread_mutex_t*)malloc(sizeof(pthread_mutex_t));
+  pthread_mutex_init(gtcb_table[k]->recvbufMutex, NULL);
   //TCB表中条目的索引号应作为客户端的新套接字ID被这个函数返回
   return k;
 }
@@ -83,7 +86,7 @@ int stcp_client_sock(unsigned int client_port)
 // 如果收到了, 就返回1. 否则, 如果重传SYN的次数大于SYN_MAX_RETRY, 就将state转换到CLOSED, 并返回-1.
 int stcp_client_connect(int sockfd, int nodeID, unsigned int server_port) 
 {
-	client_tcb_t *tp = gtcb_table[sockfd];
+	tcb_t *tp = gtcb_table[sockfd];
   if(tp == NULL){
     fprintf(stderr, "Invalid sockfd \n");
     return -1;
@@ -134,9 +137,9 @@ int stcp_client_connect(int sockfd, int nodeID, unsigned int server_port)
 // 因为用户数据被分片为固定大小的STCP段, 所以一次stcp_client_send调用可能会产生多个segBuf
 // 被添加到发送缓冲区链表中. 如果调用成功, 数据就被放入TCB发送缓冲区链表中, 根据滑动窗口的情况,
 // 数据可能被传输到网络中, 或在队列中等待传输.
-int stcp_client_send(int sockfd, void* data, unsigned int length) 
+int stcp_send(int sockfd, void* data, unsigned int length) 
 {
-  client_tcb_t *tp = gtcb_table[sockfd];
+  tcb_t *tp = gtcb_table[sockfd];
   if(!tp){
     fprintf(stderr, "sockfd not found");
   }
@@ -191,13 +194,53 @@ int stcp_client_send(int sockfd, void* data, unsigned int length)
   }
   
   while(1){
-    pthread_mutex_lock(tp->bufMutex);
+    pthread_mutex_lock(tp->sendbufMutex);
     if(tp->sendBufHead == NULL){
-      pthread_mutex_unlock(tp->bufMutex);
+      pthread_mutex_unlock(tp->sendbufMutex);
       break;
     }
-    pthread_mutex_unlock(tp->bufMutex);
+    pthread_mutex_unlock(tp->sendbufMutex);
 	  sleep(1);
+  }
+  return 1;
+}
+
+
+// 接收来自STCP客户端的数据. 这个函数每隔RECVBUF_POLLING_INTERVAL时间
+// 就查询接收缓冲区, 直到等待的数据到达, 它然后存储数据并返回1. 如果这个函数失败, 则返回-1.
+int stcp_recv(int sockfd, void* buf, unsigned int length) {
+  tcb_t* tp = gtcb_table[sockfd];
+  if (tp == NULL) {
+	fprintf(stderr, "socket does not exist\n");
+	return -1;
+  }
+  switch (tp->stt) {
+	case CLOSED: 
+	  fprintf(stderr, "socket is in CLOSED\n");
+	  return -1;
+	case SYNSENT:
+	  fprintf(stderr, "socket is in SYNSENT\n");
+	  return -1;
+	case CONNECTED:
+	  while (1) {
+		pthread_mutex_lock(tp->recvbufMutex);
+		if(tp->usedBufLen >= length) {
+		  memcpy(buf, tp->recvBuf, length);
+		  tp->usedBufLen -= length;
+		  memcpy(tp->recvBuf, tp->recvBuf + length, tp->usedBufLen);
+  		pthread_mutex_unlock(tp->recvbufMutex);
+		  break;
+		} else {
+  		pthread_mutex_unlock(tp->recvbufMutex);
+  	  sleep(RECVBUF_POLLING_INTERVAL);
+		}
+	  }
+	  break;
+	case FINWAIT:
+	  fprintf(stderr, "socket is in FINWAIT\n");
+	  return -1;
+	default:
+	  break;
   }
   return 1;
 }
@@ -208,7 +251,7 @@ int stcp_client_send(int sockfd, void* data, unsigned int length)
 // state仍然为FINWAIT, state将转换到CLOSED, 并返回-1.
 int stcp_client_disconnect(int sockfd) 
 {
-	client_tcb_t *tp = gtcb_table[sockfd];
+	tcb_t *tp = gtcb_table[sockfd];
   if(tp == NULL){
     fprintf(stderr, "Invalid sockfd \n");
     return -1;
@@ -252,7 +295,7 @@ int stcp_client_disconnect(int sockfd)
 // 失败时(即位于错误的状态)返回-1.
 int stcp_client_close(int sockfd) 
 {
-	client_tcb_t *tp = gtcb_table[sockfd];
+	tcb_t *tp = gtcb_table[sockfd];
   if(tp == NULL){
     fprintf(stderr, "Invalid sockfd\n");
     return -1;
@@ -286,19 +329,25 @@ void* seghandler(void* arg)
   {
 		//根据dest_port和src_port找到对应的TCB
 		int k = -1;
-		for (int i = 0; i < MAX_TRANSPORT_CONNECTIONS; i++){
-			if(gtcb_table[i] != NULL
-			&& gtcb_table[i]->server_portNum == seg.header.src_port
+		for (int i = 0; i < MAX_TRANSPORT_CONNECTIONS && gtcb_table[i] != NULL; i++){
+      printf("|SERV PORT: %d|\n", gtcb_table[i]->server_portNum);
+      printf("|CLIE PORT: %d|\n", gtcb_table[i]->client_portNum);
+      printf("|SOURCE PORT: %d|\n", seg.header.src_port);
+	    printf("|DEST   PORT: %d|\n", seg.header.dest_port);
+			if(gtcb_table[i]->server_portNum == seg.header.src_port
       && gtcb_table[i]->client_portNum == seg.header.dest_port){
 				k = i;
 				break;
 			}
 		}
-		if(k==-1){
-			fprintf(stderr, "ERROR: received an invalid segment\n");
+    
+    
+    if (k == -1)
+    {
+      fprintf(stderr, "ERROR: received an invalid segment\n");
 			exit(-1);
 		}
-		client_tcb_t *tp = gtcb_table[k];
+		tcb_t *tp = gtcb_table[k];
 		int segtype = seg.header.type;
     if(segtype == SYNACK){
       //FSM
@@ -323,7 +372,7 @@ void* seghandler(void* arg)
     else if(segtype == DATAACK && tp->stt == CONNECTED 
     && tp->sendBufHead->seg.header.seq_num < seg.header.ack_num){
       printf("receive DATA ACK %d...\n", seg.header.ack_num);
-      pthread_mutex_lock(tp->bufMutex);
+      pthread_mutex_lock(tp->sendbufMutex);
       int cnt = 0;
       while (tp->sendBufHead != NULL &&
             tp->sendBufHead != tp->sendBufunSent &&
@@ -340,8 +389,29 @@ void* seghandler(void* arg)
         tp->sendBufunSent = tp->sendBufTail = NULL;
         tp->unAck_segNum = 0;
       }
-      pthread_mutex_unlock(tp->bufMutex);
-    }
+      pthread_mutex_unlock(tp->sendbufMutex);
+    }else if (segtype == DATA && tp->stt == CONNECTED ) {
+
+      printf("%d exp, %d seg seq\n", tp->expect_seqNum, seg.header.seq_num);
+      if (tp->expect_seqNum == seg.header.seq_num)
+      {
+        tp->expect_seqNum += seg.header.length;
+				pthread_mutex_lock(tp->recvbufMutex);
+				memcpy(tp->recvBuf + tp->usedBufLen, seg.data, seg.header.length);
+				tp->usedBufLen += seg.header.length;
+				pthread_mutex_unlock(tp->recvbufMutex);
+				seg_t datack_seg;
+				datack_seg.header.src_port = tp->client_portNum;
+				datack_seg.header.dest_port = tp->server_portNum;
+				datack_seg.header.seq_num = 0;
+				datack_seg.header.ack_num = tp->expect_seqNum;
+				datack_seg.header.type = DATAACK;
+				sip_sendseg(gsip_sonn, serverID, &datack_seg);
+				printf("send DATA ACK on (%d)to server\n", seg.header.seq_num);
+		  }
+
+	  
+		}
   }
   return 0;
 }
@@ -352,7 +422,7 @@ void* seghandler(void* arg)
 //当超时事件发生时, 重新发送所有已发送但未被确认段. 当发送缓冲区为空时, 这个线程将终止.
 void* sendBuf_timer(void* clienttcb) 
 {
-	client_tcb_t* tp = (client_tcb_t*)clienttcb;
+	tcb_t* tp = (tcb_t*)clienttcb;
   if(tp == NULL) {
     fprintf(stderr, "socket does not exist\n");
     exit(-1);
@@ -360,10 +430,10 @@ void* sendBuf_timer(void* clienttcb)
 
   while(1) {
     usleep(SENDBUF_POLLING_INTERVAL/1000);
-    pthread_mutex_lock(tp->bufMutex);
+    pthread_mutex_lock(tp->sendbufMutex);
     if(tp->sendBufHead == NULL) {
       assert(tp->unAck_segNum == 0);
-      pthread_mutex_unlock(tp->bufMutex);
+      pthread_mutex_unlock(tp->sendbufMutex);
       printf("The sendBuftimer exit\n");
       pthread_exit(NULL);
     } 
@@ -387,7 +457,7 @@ void* sendBuf_timer(void* clienttcb)
       }
 
     }
-    pthread_mutex_unlock(tp->bufMutex);
+    pthread_mutex_unlock(tp->sendbufMutex);
     
   }
   return NULL;
