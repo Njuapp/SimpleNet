@@ -2,6 +2,8 @@ all: son/son sip/sip client/app_simple_client server/app_simple_server client/ap
 
 common/pkt.o: common/pkt.c common/pkt.h common/constants.h
 	gcc -Wall -pedantic -std=c99 -g -c common/pkt.c -o common/pkt.o
+common/user.o: common/user.c common/user.h
+	gcc -Wall -pedantic -std=c99 -g -c common/user.c -o common/user.o
 topology/topology.o: topology/topology.c 
 	gcc -Wall -pedantic -std=c99 -g -c topology/topology.c -o topology/topology.o
 son/neighbortable.o: son/neighbortable.c
@@ -19,11 +21,15 @@ sip/sip: common/pkt.o common/seg.o topology/topology.o sip/nbrcosttable.o sip/dv
 client/app_simple_client: client/app_simple_client.c common/seg.o client/stcp_client.o topology/topology.o 
 	gcc -Wall -pedantic -std=c99 -g -pthread client/app_simple_client.c common/seg.o client/stcp_client.o topology/topology.o -o client/app_simple_client 
 client/app_stress_client: client/app_stress_client.c common/seg.o client/stcp_client.o topology/topology.o 
-	gcc -Wall -pedantic -std=c99 -g -pthread client/app_stress_client.c common/seg.o client/stcp_client.o topology/topology.o -o client/app_stress_client 
+	gcc -Wall -pedantic -std=c99 -g -pthread client/app_stress_client.c common/seg.o client/stcp_client.o topology/topology.o -o client/app_stress_client
+client/tcp_client: client/tcp_client.c common/seg.o common/user.o client/stcp_client.o topology/topology.o 
+	gcc -Wall -pedantic -std=c99 -g -pthread client/tcp_client.c common/user.o common/seg.o client/stcp_client.o topology/topology.o -o client/tcp_client  
 server/app_simple_server: server/app_simple_server.c common/seg.o server/stcp_server.o topology/topology.o 
 	gcc -Wall -pedantic -std=c99 -g -pthread server/app_simple_server.c common/seg.o server/stcp_server.o topology/topology.o -o server/app_simple_server
 server/app_stress_server: server/app_stress_server.c common/seg.o server/stcp_server.o topology/topology.o 
 	gcc -Wall -pedantic -std=c99 -g -pthread server/app_stress_server.c common/seg.o server/stcp_server.o topology/topology.o -o server/app_stress_server
+server/tcp_server: server/tcp_server.c common/seg.o common/user.o server/stcp_server.o topology/topology.o 
+	gcc -Wall -pedantic -std=c99 -g -pthread server/tcp_server.c common/user.o common/seg.o server/stcp_server.o topology/topology.o -o server/tcp_server  
 common/seg.o: common/seg.c common/seg.h
 	gcc -Wall -pedantic -std=c99 -g -c common/seg.c -o common/seg.o
 client/stcp_client.o: client/stcp_client.c client/stcp_client.h 
