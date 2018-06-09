@@ -11,7 +11,9 @@
 #include "../common/user.h"
 #include <iostream>
 using namespace std;
-
+extern "C" {
+	#include "stcp_client.h"
+}
 #define MAXLINE 4096
 #define SERV_PORT 8888
 
@@ -180,6 +182,7 @@ void* monitor_handler(void* socket_desc)
 
 int main()
 {
+	stcp_client_init(0);
 	int sockfd;
 	struct sockaddr_in servaddr;
 	char sendline[MAXLINE];
