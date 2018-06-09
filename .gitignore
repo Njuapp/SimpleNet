@@ -1,8 +1,10 @@
 server/app_simple_server
 server/app_stress_server
+server/tcp_server
 *.o
 .DS_Store
 client/app_simple_client
 client/app_stress_client
+client/tcp_client
 .vscode/
 *.sh
