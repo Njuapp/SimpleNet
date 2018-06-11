@@ -16,7 +16,7 @@ extern "C" {
 }
 #define MAXLINE 4096
 #define SERV_PORT 8888
-
+#define CLNT_PORT 6666
 int state = -1;
 char myName[50];
 char pkName[50];
@@ -41,7 +41,7 @@ void* monitor_handler(void* socket_desc)
 	char recvline[MAXLINE];
 	int sock = *(int*)socket_desc;
 	int read_size;
-	while((read_size = recv(sock, recvline, MAXLINE, 0)) > 0)
+	while((read_size = stcp_recv(sock, recvline, sizeof(StcpData))) > 0)
 	{
 
 		TcpData* data = (TcpData*)recvline;
@@ -165,7 +165,9 @@ void* monitor_handler(void* socket_desc)
 							std::cin.get();
 						}
 						data->category = 0x10; //ask for broadcast
-						send(sock, data, sizeof(TcpData), 0);
+						StcpData stcpdata;
+						memcpy(&stcpdata.tcpdata, data, sizeof(TcpData));
+						stcp_send(sock, &stcpdata, sizeof(StcpData));
 
 						break;
 				}
@@ -179,21 +181,34 @@ void* monitor_handler(void* socket_desc)
 
 }
 
+int connectToSIP() {
+
+	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	struct sockaddr_in serv_addr;
+	memset(&serv_addr, 0, sizeof(serv_addr));
+	serv_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+	serv_addr.sin_family = AF_INET;
+	serv_addr.sin_port = htons(SIP_PORT);
+	if(!connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)))
+		return sockfd;
+	else
+		return -1;
+	
+}
 
 int main()
 {
-	stcp_client_init(0);
-	int sockfd;
-	struct sockaddr_in servaddr;
+	int sip_conn = connectToSIP();
+	if(sip_conn==-1){
+		perror("Cannot connect to local SIP\n");
+		exit(-1);
+	}
+	stcp_client_init(sip_conn);
+	sleep(1);
+	int sockfd = stcp_client_sock(CLNT_PORT);
+	stcp_client_connect(sockfd, 188, SERV_PORT);
 	char sendline[MAXLINE];
 
-	sockfd = socket(AF_INET, SOCK_STREAM, 0);
-	memset(&servaddr, 0, sizeof(servaddr));
-	servaddr.sin_family = AF_INET;
-	servaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
-	servaddr.sin_port = htons(8888);
-
-	connect(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr));
 	state = 0;
 	pthread_t thread_id;
 	if(pthread_create(&thread_id, NULL, monitor_handler, (void*) &sockfd) > 0)
@@ -214,7 +229,8 @@ int main()
 			case 0:
 				if(strcmp(sendline, "#")==0)
 				{
-					close(sockfd);
+					stcp_client_disconnect(sockfd);
+					stcp_client_close(sockfd);
 					exit(0);
 				}
 				else if(strcmp(sendline, "h")==0)
@@ -228,13 +244,16 @@ int main()
 					TcpData data;
 					data.category = 0x01;
 					strcpy(data.user_name, sendline);
-					send(sockfd, (char*)&data, sizeof(TcpData), 0);
+					StcpData stcpdata;
+					memcpy(&stcpdata.tcpdata, &data, sizeof(TcpData));
+					stcp_send(sockfd, (char *)&stcpdata, sizeof(StcpData));
 				}
 				break;
 			case 2:
 				if(strcmp(sendline, "#")==0)
 				{
-					close(sockfd);
+					stcp_client_disconnect(sockfd);
+					stcp_client_close(sockfd);
 					exit(0);
 				}
 				else if(strcmp(sendline, "r")==0)
@@ -246,7 +265,8 @@ int main()
 			case 3:
 				if(strcmp(sendline, "#")==0)
 				{
-					close(sockfd);
+					stcp_client_disconnect(sockfd);
+					stcp_client_close(sockfd);
 					exit(0);
 				}
 				else
@@ -257,7 +277,9 @@ int main()
 					strcpy(data.user_name, myName);
 					strcpy(data.pk_name, sendline);
 					state = 4; // Waiting for PK response
-					send(sockfd, (char*)&data, sizeof(TcpData), 0);
+					StcpData stcpdata;
+					memcpy(&stcpdata.tcpdata, &data, sizeof(TcpData));
+					stcp_send(sockfd, (char *)&stcpdata, sizeof(StcpData));
 					printf("Waiting for your opponent to respond...\n");
 				}
 
@@ -281,8 +303,9 @@ int main()
 						state = 3;
 						data.info = 0x02;
 					}
-					send(sockfd, (char*)&data, sizeof(TcpData), 0);
-
+					StcpData stcpdata;
+					memcpy(&stcpdata.tcpdata, &data, sizeof(TcpData));
+					stcp_send(sockfd, (char *)&stcpdata, sizeof(StcpData));
 				}
 				else
 					printf("%s\n", "Please enter y to accept or n to decline");
@@ -301,7 +324,9 @@ int main()
 						data.info = 0x02;
 					else
 						data.info = 0x03;
-					send(sockfd, (char*)&data, sizeof(TcpData), 0);
+					StcpData stcpdata;
+					memcpy(&stcpdata.tcpdata, &data, sizeof(TcpData));
+					stcp_send(sockfd, (char *)&stcpdata, sizeof(StcpData));
 					printf("Waiting for judge...\n");
 
 				}
@@ -312,14 +337,11 @@ int main()
 			default:
 				;
 		}
-		/*
-		TcpData data;
-		data.category = 0x01;
-		strcpy(data.user_name, sendline);
-		send(sockfd, (char*)&data, sizeof(TcpData), 0);
-		*/
 		memset(sendline, 0, MAXLINE);
 
 	}
+	stcp_client_disconnect(sockfd);
+	stcp_client_close(sockfd);
+	close(sip_conn);
 	exit(0);
 }

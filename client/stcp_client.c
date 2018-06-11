@@ -151,7 +151,6 @@ int stcp_send(int sockfd, void* data, unsigned int length)
   
   if (length % MAX_SEG_LEN)
     num_seg += 1;
-  printf("%d seg(s), %u\n", num_seg, length);
   char *data_to_send = (char *)data;
   for (int i = 0; i * MAX_SEG_LEN < length; i++){
     if(tp->stt != CONNECTED){
@@ -183,10 +182,7 @@ int stcp_send(int sockfd, void* data, unsigned int length)
       tp->sendBufTail = segBuf;
     }
   }
-  printf("==TO SEND: %d seg(s) (%d)[%d-]%d-%d==\n\n", num_seg, tp->unAck_segNum, 
-            tp->sendBufHead->seg.header.seq_num ,
-            tp->sendBufunSent->seg.header.seq_num,
-            tp->sendBufTail->seg.header.seq_num);
+  
   pthread_t sendBuf;
   int rc = pthread_create(&sendBuf, NULL, sendBuf_timer, tp);
   if(rc){
@@ -329,13 +325,12 @@ void* seghandler(void* arg)
   {
 		//根据dest_port和src_port找到对应的TCB
 		int k = -1;
-		for (int i = 0; i < MAX_TRANSPORT_CONNECTIONS && gtcb_table[i] != NULL; i++){
-      printf("|SERV PORT: %d|\n", gtcb_table[i]->server_portNum);
-      printf("|CLIE PORT: %d|\n", gtcb_table[i]->client_portNum);
-      printf("|SOURCE PORT: %d|\n", seg.header.src_port);
-	    printf("|DEST   PORT: %d|\n", seg.header.dest_port);
-			if(gtcb_table[i]->server_portNum == seg.header.src_port
-      && gtcb_table[i]->client_portNum == seg.header.dest_port){
+    
+    for (int i = 0; i < MAX_TRANSPORT_CONNECTIONS && gtcb_table[i] != NULL; i++)
+    {
+      
+			if((seg.header.type == SYNACK ||gtcb_table[i]->server_portNum == seg.header.src_port)
+      && gtcb_table[i]->server_nodeID == serverID){
 				k = i;
 				break;
 			}
@@ -354,6 +349,7 @@ void* seghandler(void* arg)
       switch(tp->stt){
         case SYNSENT:
         tp->stt = CONNECTED;
+        tp->server_portNum = seg.header.src_port;
         tp->next_seqNum = seg.header.ack_num;
         break;
         default:
@@ -371,7 +367,6 @@ void* seghandler(void* arg)
     }
     else if(segtype == DATAACK && tp->stt == CONNECTED 
     && tp->sendBufHead->seg.header.seq_num < seg.header.ack_num){
-      printf("receive DATA ACK %d...\n", seg.header.ack_num);
       pthread_mutex_lock(tp->sendbufMutex);
       int cnt = 0;
       while (tp->sendBufHead != NULL &&
@@ -392,7 +387,6 @@ void* seghandler(void* arg)
       pthread_mutex_unlock(tp->sendbufMutex);
     }else if (segtype == DATA && tp->stt == CONNECTED ) {
 
-      printf("%d exp, %d seg seq\n", tp->expect_seqNum, seg.header.seq_num);
       if (tp->expect_seqNum == seg.header.seq_num)
       {
         tp->expect_seqNum += seg.header.length;
@@ -407,7 +401,7 @@ void* seghandler(void* arg)
 				datack_seg.header.ack_num = tp->expect_seqNum;
 				datack_seg.header.type = DATAACK;
 				sip_sendseg(gsip_sonn, serverID, &datack_seg);
-				printf("send DATA ACK on (%d)to server\n", seg.header.seq_num);
+				//printf("send DATA ACK on (%d)to server\n", seg.header.seq_num);
 		  }
 
 	  
@@ -434,7 +428,7 @@ void* sendBuf_timer(void* clienttcb)
     if(tp->sendBufHead == NULL) {
       assert(tp->unAck_segNum == 0);
       pthread_mutex_unlock(tp->sendbufMutex);
-      printf("The sendBuftimer exit\n");
+      //printf("The sendBuftimer exit\n");
       pthread_exit(NULL);
     } 
     else {
@@ -444,14 +438,14 @@ void* sendBuf_timer(void* clienttcb)
       {
         tp->sendBufunSent->sentTime = time(NULL);
         sip_sendseg(gsip_sonn, tp->server_nodeID, &tp->sendBufunSent->seg);
-        printf("SEND OUT SEG %d\n", tp->sendBufunSent->seg.header.seq_num);
+        //printf("SEND OUT SEG %d\n", tp->sendBufunSent->seg.header.seq_num);
         tp->unAck_segNum++;
         cnt++;
       }
       if (time(NULL) - tp->sendBufHead->sentTime > DATA_TIMEOUT)
       {
         for (segBuf_t *seg_p = tp->sendBufHead; seg_p != tp->sendBufunSent;seg_p = seg_p->next){
-          printf("RESEND SEG %d\n\n", seg_p->seg.header.seq_num);
+          //printf("RESEND SEG %d\n\n", seg_p->seg.header.seq_num);
           sip_sendseg(gsip_sonn, tp->server_nodeID, &seg_p->seg);
         }
       }

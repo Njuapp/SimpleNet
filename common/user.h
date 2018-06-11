@@ -3,7 +3,7 @@
 
 #pragma pack(1)
 
-#define MAX_USER 50
+#define MAX_USER 10
 
 #include <pthread.h>
 #include <unordered_map>
@@ -46,5 +46,9 @@ typedef struct user_info UserInfo;
 typedef struct tcp_data TcpData;
 typedef struct tcp_broadcast TcpBroadcast;
 
+typedef union stcp_data{
+	TcpBroadcast castdata;
+	TcpData tcpdata;
+} StcpData;
 
 #endif

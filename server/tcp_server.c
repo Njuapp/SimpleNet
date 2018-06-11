@@ -5,10 +5,14 @@
 #include <sys/types.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <assert.h>
 #include <pthread.h>
 
 #include "../common/user.h"
 #include <set>
+extern "C"{
+	#include "stcp_server.h"
+}
 using namespace std;
 extern unordered_map<string, struct user_info> user_table;
 
@@ -18,8 +22,22 @@ extern unordered_map<string, struct user_info> user_table;
 void broadcast();
 void *connection_handler(void *);
 
-set<int> sock_set;
-
+int sock_set[10];
+int sock_cnt = 0;
+int makehash(int sock){
+	return sock % 10;
+}
+void init(){
+	for (int i = 0; i < 10; i ++){
+		sock_set[i] = -1;
+	}
+}
+void add(int sockfd){
+	sock_set[makehash(sockfd)] = sockfd;
+}
+void erase(int sockfd){
+	sock_set[makehash(sockfd)] = -1;
+}
 uint8_t rule(uint8_t p1, uint8_t p2)
 {
 	if(p1 == p2)
@@ -30,34 +48,37 @@ uint8_t rule(uint8_t p1, uint8_t p2)
 		return 0x01;
 }
 
+int connectToSIP() {
+
+	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	struct sockaddr_in serv_addr;
+	memset(&serv_addr, 0, sizeof(serv_addr));
+	serv_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+	serv_addr.sin_family = AF_INET;
+	serv_addr.sin_port = htons(SIP_PORT);
+	if(!connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)))
+		return sockfd;
+	else
+		return -1;
+	
+}
+
 int main()
 {
-	int socket_desc, client_sock, c;
-	struct sockaddr_in server, client;
-
-	socket_desc = socket(AF_INET, SOCK_STREAM, 0);
-	if(socket_desc == -1)
-	{
-		puts("Could not create socket");
+	int sip_conn = connectToSIP();
+	if(sip_conn == -1){
+		perror("Cannot connect to local SIP\n");
 		exit(-1);
 	}
-	puts("Socket created");
+	stcp_server_init(sip_conn);
+	int listenfd= stcp_server_sock(SERV_PORT);
 
-	server.sin_family = AF_INET;
-	server.sin_addr.s_addr = INADDR_ANY;
-	server.sin_port = htons(SERV_PORT);
-
-	bind(socket_desc, (struct sockaddr *)&server, sizeof(server));
-	puts("Bind done");
-
-	listen(socket_desc, 20);
-	puts("Waiting for incoming connections...");
-	c = sizeof(struct sockaddr_in);
+	init();
 	pthread_t thread_id;
-
-	while((client_sock = accept(socket_desc, (struct sockaddr *)&client, (socklen_t*)&c)) != -1)
+	int client_sock;
+	while ((client_sock = stcp_server_accept(listenfd)) != -1)
 	{
-		puts("Connection accepted");
+		printf("Connection accepted sockfd: %d\n", client_sock);
 		if(pthread_create(&thread_id, NULL, connection_handler, (void*) &client_sock) > 0)
 		{
 			perror("Could not create thread");
@@ -66,7 +87,8 @@ int main()
 		puts("Handler assigned");
 	}
 	perror("Accpet failed");
-	close(socket_desc);
+	stcp_server_close(listenfd);
+	close(sip_conn);
 	return -1;
 }
 
@@ -78,9 +100,10 @@ void* connection_handler(void* socket_desc)
 	char client_message[MAXLINE];
 
 
-	while((read_size = recv(sock, client_message, MAXLINE, 0)) > 0)
+	while((read_size = stcp_recv(sock, client_message, sizeof(StcpData))) > 0)
 	{
-		TcpData* data = (TcpData*)client_message;
+		printf("Received a TcpData\n");
+		TcpData *data = (TcpData *)client_message;
 		switch(data->category) {
 			case 0x01:
 				/* 0x01 stands for login
@@ -88,7 +111,7 @@ void* connection_handler(void* socket_desc)
 				if not, add the user into user_table or change user state to 1, else return bad request*/
 				if(user_table.find(data->user_name)==user_table.end())
 				{
-					sock_set.insert(sock); // insert the socket into set
+					add(sock);// insert the socket into set
 					UserInfo userinfo;
 					userinfo.state = 1;
 					userinfo.current_life = 10;
@@ -98,25 +121,31 @@ void* connection_handler(void* socket_desc)
 					data->info = 0x01; //success
 					printf("%s\n", "Success login");
 					printf("Total user number: %lu\n", user_table.size());
-					write(sock, data, sizeof(TcpData));
+					StcpData stcpdata;
+					memcpy(&stcpdata.tcpdata, data, sizeof(TcpData));
+					stcp_send(sock, (char *)&stcpdata, sizeof(StcpData));
 					broadcast();
 				}
 				else if(user_table[data->user_name].state==0)
 				{
-					sock_set.insert(sock); // insert the socket into set
+					add(sock); // insert the socket into set
 					user_table[data->user_name].state = 1;
 					user_table[data->user_name].current_life = 10;
 					data->info = 0x01; //success
 					printf("%s\n", "Success login");
 					printf("Total user number: %lu\n", user_table.size());
-					write(sock, data, sizeof(TcpData));
+					StcpData stcpdata;
+					memcpy(&stcpdata.tcpdata, data, sizeof(TcpData));
+					stcp_send(sock, (char *)&stcpdata, sizeof(StcpData));
 					broadcast();
 				}
 				else
 				{
 					data->info = 0x02; //fail to login
 					printf("%s\n", "Fail login");
-					write(sock, data, sizeof(TcpData));
+					StcpData stcpdata;
+					memcpy(&stcpdata.tcpdata, data, sizeof(TcpData));
+					stcp_send(sock, (char *)&stcpdata, sizeof(StcpData));
 				}
 				break;
 			case 0x02: { //challenge
@@ -141,18 +170,24 @@ void* connection_handler(void* socket_desc)
 					user_table[data->user_name].state = 1;
 					data->category = 0x03;
 					data->info = 0x03;
-					write(sock, data, sizeof(TcpData));
+					StcpData stcpdata;
+					memcpy(&stcpdata.tcpdata, data, sizeof(TcpData));
+					stcp_send(sock, (char *)&stcpdata, sizeof(StcpData));
 				}
 				else
 				{
-					write(pk_sock, data, sizeof(TcpData));
+					StcpData stcpdata;
+					memcpy(&stcpdata.tcpdata, data, sizeof(TcpData));
+					stcp_send(pk_sock, (char *)&stcpdata, sizeof(StcpData));
 				}
 				break;
 			}
 			case 0x03: { //response to challenge
 				int res_sock = 0;
 				res_sock = user_table[data->user_name].sock;
-				write(res_sock, data, sizeof(TcpData));
+				StcpData stcpdata;
+				memcpy(&stcpdata.tcpdata, data, sizeof(TcpData));
+				stcp_send(res_sock, (char *)&stcpdata, sizeof(StcpData));
 				if(data->info == 0x01)
 				{
 					user_table[data->user_name].state = 3;
@@ -179,9 +214,12 @@ void* connection_handler(void* socket_desc)
 					{
 						data->info = 0x03;
 						data->remain_life = user_table[data->user_name].current_life;
-						write(sock, data, sizeof(TcpData));
+						StcpData stcpdata;
+						memcpy(&stcpdata.tcpdata, data, sizeof(TcpData));
+						stcp_send(sock, (char *)&stcpdata, sizeof(StcpData));
 						data->remain_life = user_table[data->pk_name].current_life;
-						write(pk_sock, data, sizeof(TcpData));
+						memcpy(&stcpdata.tcpdata, data, sizeof(TcpData));
+						stcp_send(pk_sock, (char *)&stcpdata, sizeof(StcpData));
 					}
 					else if(result==0x02) //lose
 					{
@@ -196,10 +234,13 @@ void* connection_handler(void* socket_desc)
 							user_table[data->user_name].current_life = 10;
 							user_table[data->pk_name].current_life = 10;
 						}
-						write(sock, data, sizeof(TcpData));
+						StcpData stcpdata;
+						memcpy(&stcpdata.tcpdata, data, sizeof(TcpData));
+						stcp_send(sock, (char *)&stcpdata, sizeof(StcpData));
 						data->remain_life = user_table[data->pk_name].current_life;
 						data->info = 0x01;
-						write(pk_sock, data, sizeof(TcpData));
+						memcpy(&stcpdata.tcpdata, data, sizeof(TcpData));
+						stcp_send(pk_sock, (char *)&stcpdata, sizeof(StcpData));
 					}
 					else if(result==0x01) //win
 					{
@@ -214,10 +255,13 @@ void* connection_handler(void* socket_desc)
 							user_table[data->user_name].current_life = 10;
 							user_table[data->pk_name].current_life = 10;
 						}
-						write(pk_sock, data, sizeof(TcpData));
+						StcpData stcpdata;
+						memcpy(&stcpdata.tcpdata, data, sizeof(TcpData));
+						stcp_send(pk_sock, (char *)&stcpdata, sizeof(StcpData));
 						data->remain_life = user_table[data->user_name].current_life;
 						data->info = 0x01;
-						write(sock, data, sizeof(TcpData));
+						memcpy(&stcpdata.tcpdata, data, sizeof(TcpData));
+						stcp_send(sock, (char *)&stcpdata, sizeof(StcpData));
 					}
 				}
 				break;
@@ -254,10 +298,9 @@ void* connection_handler(void* socket_desc)
 		perror("Receive failed");
 	}
 	broadcast();
-	sock_set.erase(sock); // Remove the socket from set
-	close(sock);
+	erase(sock); // Remove the socket from set
+	stcp_server_close(sock);
 	return 0;
-
 }
 
 // Broadcast all user info to all online user
@@ -276,12 +319,12 @@ void broadcast()
 		index++;
 		it++;
 	}
-	unsigned int data_length = (5+54*index);
-	set<int>::iterator it2 = sock_set.begin();
-	while(it2 != sock_set.end())
+	StcpData stcpdata;
+	memcpy(&stcpdata.castdata, &data, sizeof(TcpBroadcast));
+	for (int i = 0; i < 10; i++)
 	{
-		write(*it2, &data, data_length);
-		it2++;
+		if(sock_set[i] != -1)
+			stcp_send(sock_set[i], &stcpdata, sizeof(StcpData));
 	}
 
 }

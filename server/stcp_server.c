@@ -51,6 +51,14 @@ void stcp_server_init(int conn) {
 // 该TCB中的所有字段都被初始化, 例如, TCB state被设置为CLOSED, 服务器端口被设置为函数调用参数server_port. 
 // TCB表中条目的索引应作为服务器的新套接字ID被这个函数返回, 它用于标识服务器端的连接. 
 // 如果TCB表中没有条目可用, 这个函数返回-1.
+int salloc(){
+	for (int i = 0; i < MAX_TRANSPORT_CONNECTIONS; i++){
+    if(gtcb_table[i] == NULL)
+			return i;
+	}
+	return -1;
+}
+
 int stcp_server_sock(unsigned int server_port) 
 {
 	int k = -1;
@@ -91,15 +99,40 @@ int stcp_server_accept(int sockfd)
 	}
 	switch(tp->stt){
 		case CLOSED:
+		case LISTENING:
 			tp->stt = LISTENING;
-			fprintf(stderr, "===LISTENING FROM CLIENT");
 			while(tp->stt != CONNECTED){
 				sleep(1);
-				fprintf(stderr,".");
 			}
-			printf("=>>\n===CONNECTION ESTABLISHED==\n");
-		case LISTENING:
-			return 1;
+			tp->stt = LISTENING;
+			int k = salloc();
+			//使用malloc()为该条目创建一个新的TCB条目.
+			gtcb_table[k] = (tcb_t *)malloc(sizeof(tcb_t));
+			//初始化TCB中的字段
+			memset(gtcb_table[k], 0, sizeof(tcb_t));
+			gtcb_table[k]->server_nodeID = tp->server_nodeID;
+			gtcb_table[k]->server_portNum = tp->server_portNum + k * 2;
+			gtcb_table[k]->client_nodeID = tp->client_nodeID;
+			gtcb_table[k]->client_portNum = tp->client_portNum;
+			gtcb_table[k]->expect_seqNum = 1;
+			gtcb_table[k]->stt = CONNECTED;
+			gtcb_table[k]->sendbufMutex = (pthread_mutex_t *)malloc(sizeof(pthread_mutex_t));
+			pthread_mutex_init(gtcb_table[k]->sendbufMutex, NULL);
+			gtcb_table[k]->recvBuf = (char *)malloc(sizeof(char) * RECEIVE_BUF_SIZE);
+			gtcb_table[k]->recvbufMutex = (pthread_mutex_t*)malloc(sizeof(pthread_mutex_t));
+			pthread_mutex_init(gtcb_table[k]->recvbufMutex, NULL);
+			seg_t syn_ack;
+			syn_ack.header.dest_port = gtcb_table[k]->client_portNum;
+			syn_ack.header.src_port = gtcb_table[k]->server_portNum;
+			syn_ack.header.seq_num = 0;
+			syn_ack.header.ack_num = gtcb_table[k]->expect_seqNum;
+			syn_ack.header.length = 0;
+			syn_ack.header.type = SYNACK;
+			//send a SYNACK segment to client
+			sip_sendseg(gsip_conn, gtcb_table[k]->client_nodeID, &syn_ack);
+			printf("===send a SYNACK to client===\n");
+			return k;
+		
 		case CONNECTED:
 			fprintf(stderr, "Invalid state CONNECTED\n");
 			return -1;
@@ -133,7 +166,6 @@ int stcp_send(int sockfd, void* data, unsigned int length)
   
   if (length % MAX_SEG_LEN)
     num_seg += 1;
-  printf("%d seg(s), %u\n", num_seg, length);
   char *data_to_send = (char *)data;
   for (int i = 0; i * MAX_SEG_LEN < length; i++){
     if(tp->stt != CONNECTED){
@@ -165,10 +197,6 @@ int stcp_send(int sockfd, void* data, unsigned int length)
       tp->sendBufTail = segBuf;
     }
   }
-  printf("==TO SEND: %d seg(s) (%d)[%d-]%d-%d==\n\n", num_seg, tp->unAck_segNum, 
-            tp->sendBufHead->seg.header.seq_num ,
-            tp->sendBufunSent->seg.header.seq_num,
-            tp->sendBufTail->seg.header.seq_num);
   pthread_t sendBuf;
   int rc = pthread_create(&sendBuf, NULL, sendBuf_timer, tp);
   if(rc){
@@ -234,22 +262,9 @@ int stcp_server_close(int sockfd) {
 		fprintf(stderr, "Invalid sockfd\n");
 		return -1;
 	}
-	switch(tp->stt){
-		case CLOSED:
-			free(tp);
-			tp = NULL;
-			break;
-		case LISTENING:
-			fprintf(stderr, "Invalid state LISTENING\n");
-			return -1;
-		case CONNECTED:
-			fprintf(stderr, "Invalid state CONNECTED \n");
-			return -1;
-		case CLOSEWAIT:
-			fprintf(stderr, "Invalid state CLOSEWAIT \n");
-			return -1;
-		}
-		return 1;
+	free(tp);
+	gtcb_table[sockfd] = NULL;
+	return 1;
 }
 
 // 这是由stcp_server_init()启动的线程. 它处理所有来自客户端的进入数据. seghandler被设计为一个调用sip_recvseg()的无穷循环, 
@@ -285,25 +300,16 @@ void *seghandler(void* arg) {
 		if(segtype == SYN){
 			printf("===RECEIVED A SYN ===\n");
 			//FSM state transition
+			
 			switch(tp->stt){
 				case LISTENING:
-					tp->stt = CONNECTED;
-					tp->client_nodeID = srcID;
-				case CONNECTED:
 					//fulfill something missing in server TCB state
+					tp->client_nodeID = srcID;
 					tp->client_portNum = seg.header.src_port;
-					tp->expect_seqNum = seg.header.seq_num + 1;
+					tp->stt = CONNECTED;
+				case CONNECTED:
 					//construct a SYNACK segment
-					seg_t syn_ack;
-					syn_ack.header.dest_port = tp->client_portNum;
-					syn_ack.header.src_port = tp->server_portNum;
-					syn_ack.header.seq_num = 0;
-					syn_ack.header.ack_num = tp->expect_seqNum;
-					syn_ack.header.length = 0;
-					syn_ack.header.type = SYNACK;
-					//send a SYNACK segment to client
-					sip_sendseg(gsip_conn, srcID, &syn_ack);
-					printf("===send a SYNACK to client===\n");
+					
 					break;
 				case CLOSED:
 					break;
@@ -342,7 +348,7 @@ void *seghandler(void* arg) {
 			}
 		}else if(segtype == DATAACK && tp->stt == CONNECTED 
     && tp->sendBufHead->seg.header.seq_num < seg.header.ack_num){
-      printf("receive DATA ACK %d...\n", seg.header.ack_num);
+      //printf("receive DATA ACK %d...\n", seg.header.ack_num);
       pthread_mutex_lock(tp->sendbufMutex);
       int cnt = 0;
       while (tp->sendBufHead != NULL &&
@@ -377,7 +383,7 @@ void *seghandler(void* arg) {
 				datack_seg.header.ack_num = tp->expect_seqNum;
 				datack_seg.header.type = DATAACK;
 				sip_sendseg(gsip_conn, srcID, &datack_seg);
-				printf("send DATA ACK on (%d)to client\n", seg.header.seq_num);
+				//printf("send DATA ACK on (%d)to client\n", seg.header.seq_num);
 		  }
 
 	  
@@ -404,7 +410,7 @@ void* sendBuf_timer(void* clienttcb)
     if(tp->sendBufHead == NULL) {
       assert(tp->unAck_segNum == 0);
       pthread_mutex_unlock(tp->sendbufMutex);
-      printf("The sendBuftimer exit\n");
+      //printf("The sendBuftimer exit\n");
       pthread_exit(NULL);
     } 
     else {
@@ -414,14 +420,14 @@ void* sendBuf_timer(void* clienttcb)
       {
         tp->sendBufunSent->sentTime = time(NULL);
         sip_sendseg(gsip_conn, tp->client_nodeID, &tp->sendBufunSent->seg);
-        printf("SEND OUT SEG %d\n", tp->sendBufunSent->seg.header.seq_num);
+        //printf("SEND OUT SEG %d\n", tp->sendBufunSent->seg.header.seq_num);
         tp->unAck_segNum++;
         cnt++;
       }
       if (time(NULL) - tp->sendBufHead->sentTime > DATA_TIMEOUT)
       {
         for (segBuf_t *seg_p = tp->sendBufHead; seg_p != tp->sendBufunSent;seg_p = seg_p->next){
-          printf("RESEND SEG %d\n\n", seg_p->seg.header.seq_num);
+          //printf("RESEND SEG %d\n\n", seg_p->seg.header.seq_num);
           sip_sendseg(gsip_conn, tp->server_nodeID, &seg_p->seg);
         }
       }
